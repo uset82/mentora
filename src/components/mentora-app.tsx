@@ -340,7 +340,7 @@ export function MentoraApp() {
     setSpaces(loadedSpaces);
 
     const rawDocs = (documentRows ?? []) as DocumentRecord[];
-    const jobs = ((jobRows as { data: unknown[] | null } | undefined)?.data ?? []) as {
+    const jobs = (Array.isArray(jobRows) ? jobRows : []) as {
       document_id: string;
       status: string;
       current_step: string;
@@ -2206,6 +2206,7 @@ function TutorStudio({
               hasSources={readyDocuments.length > 0}
               readyCount={readyDocuments.length}
               locale={locale}
+              mode={selectedMode}
             />
           </div>
           <div className="student-chat-actions">

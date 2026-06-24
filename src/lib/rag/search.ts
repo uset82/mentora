@@ -44,7 +44,15 @@ export async function retrieveCitations({
     );
   } catch (error) {
     console.warn("[Mentora] RAG retrieval timed out or failed:", error);
-    return []; // Return empty list to degrade gracefully to general chat instead of crashing
+    try {
+      return await withTimeout(
+        retrieveRecentReadyChunks({ service, tenantId, studySpaceId, limit }),
+        Math.min(1500, SAFETY_LIMITS.RAG_RETRIEVAL_TIMEOUT)
+      );
+    } catch (fallbackError) {
+      console.warn("[Mentora] Recent ready chunk fallback failed:", fallbackError);
+      return [];
+    }
   }
 }
 

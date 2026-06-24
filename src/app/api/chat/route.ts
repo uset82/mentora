@@ -87,6 +87,7 @@ export async function POST(request: Request) {
       studySpaceId: body.studySpaceId,
       message: body.message,
       mode: body.mode,
+      locale: body.locale,
     });
 
     const citations = orchResult.citations;
