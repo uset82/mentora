@@ -1,17 +1,5 @@
 import { getPdfMaxBytes, getPdfMaxPages } from "@/lib/limits";
-import { PDFParse } from "pdf-parse";
-import path from "node:path";
-import { pathToFileURL } from "node:url";
-
-const pdfWorkerPath = path.join(
-  process.cwd(),
-  "node_modules",
-  "pdf-parse",
-  "dist",
-  "worker",
-  "pdf.worker.mjs"
-);
-PDFParse.setWorker(pathToFileURL(pdfWorkerPath).href);
+import { getPDFParse } from "@/lib/ai/pdf-parser";
 
 export interface IntakeResult {
   ok: boolean;
@@ -49,6 +37,7 @@ export async function validateAndIntake(
   }
 
   try {
+    const PDFParse = await getPDFParse();
     const parser = new PDFParse({ data: buffer });
     // Run text parsing to extract page count
     const parsed = await parser.getText({ pageJoiner: "" }).finally(() => parser.destroy());

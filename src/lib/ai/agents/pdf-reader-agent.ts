@@ -1,17 +1,5 @@
-import { PDFParse } from "pdf-parse";
-import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { transcribePdfPageImage } from "@/lib/ai/gateway";
-
-const pdfWorkerPath = path.join(
-  process.cwd(),
-  "node_modules",
-  "pdf-parse",
-  "dist",
-  "worker",
-  "pdf.worker.mjs"
-);
-PDFParse.setWorker(pathToFileURL(pdfWorkerPath).href);
+import { getPDFParse } from "@/lib/ai/pdf-parser";
 
 export interface PageText {
   num: number;
@@ -59,6 +47,7 @@ export async function readPdf(
   onProgress?: (step: string) => void
 ): Promise<PageText[]> {
   onProgress?.("Extracting text layer...");
+  const PDFParse = await getPDFParse();
   const parser = new PDFParse({ data: buffer });
   interface ParsedResult {
     pages?: { text: string }[];
@@ -118,8 +107,9 @@ async function runOcrOnPages(
   pageNumbers: number[],
   onProgress?: (step: string) => void
 ): Promise<PageText[]> {
+  const PDFParse = await getPDFParse();
   const parser = new PDFParse({ data: Buffer.from(buffer) });
-  let screenshots: Awaited<ReturnType<PDFParse["getScreenshot"]>>["pages"] = [];
+  let screenshots: Array<{ pageNumber: number; data: Uint8Array }> = [];
 
   try {
     const screenshotResult = await parser.getScreenshot({

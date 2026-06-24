@@ -46,6 +46,7 @@ const contentSecurityPolicy = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
+  serverExternalPackages: ["pdf-parse"],
   turbopack: {
     root: process.cwd(),
   },
