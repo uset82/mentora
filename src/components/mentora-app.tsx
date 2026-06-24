@@ -28,7 +28,6 @@ import {
   MessageSquareText,
   PanelRightOpen,
   Plus,
-  Send,
   Settings2,
   ShieldCheck,
   Sparkles,
@@ -43,9 +42,12 @@ import type { FormEvent, ReactNode } from "react";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/browser";
 import { copy } from "@/lib/i18n";
-import { parseChatBlocks, parseFlashcards } from "@/lib/study-content";
-import type { VisualNode } from "@/lib/study-content";
+import { parseFlashcards } from "@/lib/study-content";
 import type { DocumentRecord, GeneratedArtifact, LearningProfile, Locale, Profile, StudySpace, ToolKind } from "@/lib/types";
+import { ChatMessage as ChatMessageComponent } from "./chat/chat-message";
+import { ChatInput as ChatInputComponent } from "./chat/chat-input";
+import { ChatModeBadge } from "./chat/chat-mode-badge";
+import { MarkdownMessage } from "./chat/markdown-message";
 
 type ChatMessage = {
   id?: string;
@@ -584,6 +586,7 @@ export function MentoraApp() {
                       readyDocuments={readyDocuments}
                       selectedModel={selectedModel}
                       t={t}
+                      locale={locale}
                     />
                   </MotionView>
                 )}
@@ -2086,6 +2089,7 @@ function TutorStudio({
   readyDocuments,
   selectedModel,
   t,
+  locale,
 }: {
   busy: string | null;
   disabled: boolean;
@@ -2100,21 +2104,26 @@ function TutorStudio({
   readyDocuments: DocumentRecord[];
   selectedModel: string;
   t: Record<string, string>;
+  locale: "es" | "en";
 }) {
-  const disabledReason = readyDocuments.length === 0 ? t.chatSourcesHint : "";
   const needsSources = readyDocuments.length === 0;
 
   return (
     <div className="student-tutor-workspace">
       <section className="student-chat-panel">
-        <div className="student-chat-header">
+        <div className="student-chat-header flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <span className="student-section-kicker">
               <BrainCircuit size={16} />
               Tutor IA
             </span>
             <h2>{t.tutorConsole}</h2>
-            <p>{t.tutorConsoleSubcopy}</p>
+            <p className="mb-2">{t.tutorConsoleSubcopy}</p>
+            <ChatModeBadge
+              hasSources={readyDocuments.length > 0}
+              readyCount={readyDocuments.length}
+              locale={locale}
+            />
           </div>
           <div className="student-chat-actions">
             <ModelSelector
@@ -2148,21 +2157,16 @@ function TutorStudio({
                 text={t.askFirstQuestionText}
               />
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {messages.map((message, index) => (
-                  <ChatBubble key={message.id ?? `${message.role}-${index}`} message={message} t={t} />
+                  <ChatMessageComponent key={message.id ?? `${message.role}-${index}`} message={message} t={t} />
                 ))}
               </div>
             )}
           </div>
         </div>
 
-        {disabledReason && (
-          <div className="mx-4 mb-2 rounded-xl border border-amber-300/30 bg-amber-400/10 px-4 py-3 text-sm leading-6 text-amber-50">
-            {disabledReason}
-          </div>
-        )}
-        <ChatInput
+        <ChatInputComponent
           disabled={disabled}
           loading={loading}
           placeholder={t.ask}
@@ -3115,184 +3119,7 @@ function Notice({
   );
 }
 
-function ChatInput({
-  disabled,
-  loading,
-  placeholder,
-  buttonLabel,
-  onSend,
-}: {
-  disabled: boolean;
-  loading: boolean;
-  placeholder: string;
-  buttonLabel: string;
-  onSend: (message: string) => void;
-}) {
-  const [value, setValue] = useState("");
-
-  return (
-    <form
-      className="flex gap-2 border-t border-white/10 p-3 sm:p-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!value.trim()) {
-          return;
-        }
-        onSend(value.trim());
-        setValue("");
-      }}
-    >
-      <input
-        className="text-input h-12 min-w-0 flex-1"
-        disabled={disabled}
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => setValue(event.target.value)}
-      />
-      <button className="primary-button h-12 px-4" disabled={disabled || loading} type="submit">
-        {loading ? <Loader2 className="animate-spin" size={17} /> : <Send size={17} />}
-        <span className="hidden sm:inline">{buttonLabel}</span>
-      </button>
-    </form>
-  );
-}
-
-function ChatBubble({ message, t }: { message: ChatMessage; t: Record<string, string> }) {
-  const isUser = message.role === "user";
-
-  return (
-    <article className={`chat-bubble ${isUser ? "is-user" : "is-assistant"}`}>
-      <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase text-slate-400">
-        {isUser ? <UserRound size={14} /> : <BrainCircuit size={14} />}
-        {isUser ? t.you : t.mentor}
-      </div>
-      {message.content ? (
-        <RichChatContent content={message.content} compact={isUser} visualTitle={t.visualMapTitle} />
-      ) : (
-        <p className="text-sm leading-7 text-slate-100">
-          <span className="inline-flex items-center gap-2 text-cyan-200">
-            <Loader2 className="animate-spin" size={14} />
-            {t.thinking}
-          </span>
-        </p>
-      )}
-      {message.citations && message.citations.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {message.citations.slice(0, 4).map((citation, index) => (
-            <span key={`${citation.fileName}-${index}`} className="citation-chip">
-              [{index + 1}] {citation.fileName}
-              {citation.pageNumber ? ` p.${citation.pageNumber}` : ""}
-            </span>
-          ))}
-        </div>
-      )}
-    </article>
-  );
-}
-
-function RichChatContent({ content, compact = false, visualTitle }: { content: string; compact?: boolean; visualTitle: string }) {
-  const blocks = parseChatBlocks(content);
-
-  return (
-    <div className={`rich-chat-content ${compact ? "is-compact" : ""}`}>
-      {blocks.map((block, index) => {
-        if (block.type === "heading") {
-          return (
-            <h4 key={`${block.type}-${index}`}>
-              {renderInlineText(block.text)}
-            </h4>
-          );
-        }
-
-        if (block.type === "list") {
-          const ListTag = block.ordered ? "ol" : "ul";
-          return (
-            <ListTag key={`${block.type}-${index}`} className={block.ordered ? "is-ordered" : ""}>
-              {block.items.map((item, itemIndex) => (
-                <li key={`${item}-${itemIndex}`}>{renderInlineText(item)}</li>
-              ))}
-            </ListTag>
-          );
-        }
-
-        if (block.type === "table") {
-          return (
-            <div key={`${block.type}-${index}`} className="chat-table-card">
-              {block.rows.map((row, rowIndex) => (
-                <div key={`${row.join("-")}-${rowIndex}`} className={rowIndex === 0 ? "is-header" : ""}>
-                  {row.map((cell, cellIndex) => (
-                    <span key={`${cell}-${cellIndex}`}>{renderInlineText(cell)}</span>
-                  ))}
-                </div>
-              ))}
-            </div>
-          );
-        }
-
-        if (block.type === "visual-tree") {
-          return <StudyDiagram key={`${block.type}-${index}`} nodes={block.nodes} title={visualTitle} />;
-        }
-
-        return <p key={`${block.type}-${index}`}>{renderInlineText(block.text)}</p>;
-      })}
-    </div>
-  );
-}
-
-function renderInlineText(text: string) {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[0-9]+\])/g).filter(Boolean);
-
-  return parts.map((part, index) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>;
-    }
-
-    if (part.startsWith("`") && part.endsWith("`")) {
-      return <span key={`${part}-${index}`} className="chat-inline-code">{part.slice(1, -1)}</span>;
-    }
-
-    if (/^\[[0-9]+\]$/.test(part)) {
-      return <span key={`${part}-${index}`} className="chat-citation-inline">{part}</span>;
-    }
-
-    return <span key={`${part}-${index}`}>{part}</span>;
-  });
-}
-
-function StudyDiagram({ nodes, title }: { nodes: VisualNode[]; title: string }) {
-  if (nodes.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="study-diagram">
-      <div className="study-diagram-title">
-        <Sparkles size={14} />
-        {title}
-      </div>
-      <div className="study-diagram-tree">
-        {nodes.map((node, index) => (
-          <StudyDiagramNode key={`${node.label}-${index}`} node={node} depth={0} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function StudyDiagramNode({ depth, node }: { depth: number; node: VisualNode }) {
-  return (
-    <div className={`study-diagram-node depth-${Math.min(depth, 3)}`}>
-      <div className="study-diagram-chip">{renderInlineText(node.label)}</div>
-      {node.children.length > 0 && (
-        <div className="study-diagram-children">
-          {node.children.map((child, index) => (
-            <StudyDiagramNode key={`${child.label}-${index}`} node={child} depth={depth + 1} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+// Legacy chat components removed in favor of modular components in src/components/chat/
 
 function DocumentCard({ document, t }: { document: DocumentRecord; t: Record<string, string> }) {
   return (
@@ -3357,7 +3184,7 @@ function ArtifactBody({ artifact, t }: { artifact: GeneratedArtifact; t: Record<
 
   return (
     <div className="artifact-rich-body">
-      <RichChatContent content={artifact.content} visualTitle={t.visualMapTitle} />
+      <MarkdownMessage content={artifact.content} />
     </div>
   );
 }
