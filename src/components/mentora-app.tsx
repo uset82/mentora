@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   AlertCircle,
   ArrowUpRight,
@@ -509,8 +509,8 @@ export function MentoraApp() {
   }
 
   return (
-    <main className="mentora-shell student-app-shell min-h-screen overflow-hidden text-slate-50">
-      <div className="student-notice-stack">
+    <main className="mentora-shell liquid-app-shell min-h-[100dvh] overflow-hidden">
+      <div className="student-notice-stack liquid-notice-stack">
         <AnimatePresence>
           {error && (
             <Notice tone="error" icon={<AlertCircle size={18} />} onDismiss={() => setError(null)}>
@@ -541,7 +541,7 @@ export function MentoraApp() {
         )}
       </AnimatePresence>
 
-      <div className={`student-app-grid ${activeView === "home" ? "has-insights" : "is-focus"}`}>
+      <div className={`liquid-app-grid ${activeView === "home" ? "has-insights" : "is-focus"}`}>
         <NavigationRail
           activeSpace={activeSpace}
           activeView={activeView}
@@ -556,28 +556,32 @@ export function MentoraApp() {
           t={t}
         />
 
-        <section className="student-main-scroll">
-          <header className="student-topbar">
-            <div className="student-topbar-context">
+        <section className="liquid-main-scroll">
+          <header className="liquid-command-bar" aria-label="Workspace command bar">
+            <div className="liquid-command-context">
               <span>{activeSpace?.name ?? t.dashboard}</span>
               <strong>{activeView === "home" ? t.dashboard : t[`${activeView}Title`]}</strong>
             </div>
-            <div className="flex items-center gap-2">
-              <button className="icon-button" aria-label={t.switchLanguage} onClick={() => setLocale(locale === "es" ? "en" : "es")}>
+            <div className="liquid-command-actions">
+              <LiquidButton className="liquid-start-button" onClick={() => setActiveView("tutor")}>
+                <Sparkles size={17} />
+                <span>{t.startStudy}</span>
+              </LiquidButton>
+              <button className="liquid-icon-button" aria-label={t.switchLanguage} onClick={() => setLocale(locale === "es" ? "en" : "es")} type="button">
                 <Globe2 size={18} />
-                <span className="hidden text-xs font-bold sm:inline">{locale.toUpperCase()}</span>
+                <span>{locale.toUpperCase()}</span>
               </button>
-              <button className="icon-button" aria-label="Help">
+              <button className="liquid-icon-button" aria-label="Help" type="button">
                 <HelpCircle size={18} />
               </button>
-              <button className="icon-button" onClick={() => supabase.auth.signOut()}>
+              <button className="liquid-icon-button" onClick={() => supabase.auth.signOut()} type="button">
                 <LogOut size={18} />
-                <span className="hidden text-xs font-bold sm:inline">{t.signOut}</span>
+                <span className="liquid-signout-label">{t.signOut}</span>
               </button>
             </div>
           </header>
 
-          <section className="student-content-panel">
+          <section className="liquid-content-panel">
             <WorkspaceHeader
               activeSpace={activeSpace}
               activeView={activeView}
@@ -598,7 +602,7 @@ export function MentoraApp() {
               t={t}
             />
 
-            <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-4">
+            <div className="min-h-0 flex-1 overflow-visible px-3 pb-5 sm:px-5 sm:pb-6">
               <AnimatePresence mode="wait">
                 {activeView === "home" && (
                   <MotionView key="home">
@@ -682,8 +686,8 @@ export function MentoraApp() {
           </section>
         </section>
 
-          {activeView === "home" && (
-          <aside className="student-right-rail">
+        {activeView === "home" && (
+          <aside className="liquid-right-rail">
             <InsightPanel
               artifacts={activeArtifacts}
               documents={activeDocuments}
@@ -693,7 +697,7 @@ export function MentoraApp() {
               t={t}
             />
           </aside>
-          )}
+        )}
       </div>
     </main>
   );
@@ -1684,6 +1688,35 @@ function PasswordRecoveryScreen({
   );
 }
 
+function LiquidButton({
+  children,
+  className = "",
+  disabled,
+  onClick,
+}: {
+  children: ReactNode;
+  className?: string;
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
+  const prefersReducedMotion = useReducedMotion();
+
+  return (
+    <motion.button
+      className={`liquid-button ${className}`}
+      disabled={disabled}
+      onClick={onClick}
+      type="button"
+      whileHover={disabled || prefersReducedMotion ? undefined : { y: -1, scale: 1.01 }}
+      whileTap={disabled || prefersReducedMotion ? undefined : { y: 1, scale: 0.985 }}
+      transition={{ type: "spring", stiffness: 420, damping: 32, mass: 0.7 }}
+    >
+      <span className="liquid-button-shine" aria-hidden="true" />
+      <span className="liquid-button-content">{children}</span>
+    </motion.button>
+  );
+}
+
 function NavigationRail({
   activeSpace,
   activeView,
@@ -1716,93 +1749,76 @@ function NavigationRail({
     { id: "tools", label: t.studyTools, detail: t.toolsNav },
     { id: "profile", label: t.settings, detail: profile?.role ?? t.student },
   ];
+  const initials = (profile?.full_name ?? profile?.email ?? "M").slice(0, 2).toUpperCase();
 
   return (
-    <aside className="student-sidebar">
-      <div className="student-sidebar-logo">
-        <MentoraLogo />
-      </div>
-
-      <div className="student-profile-card">
-        <div className="student-avatar">{(profile?.full_name ?? profile?.email ?? "M").slice(0, 2).toUpperCase()}</div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-bold text-white">{profile?.full_name ?? profile?.email ?? t.student}</p>
-          <p className="text-xs text-slate-400">{t.student}</p>
+    <aside className="liquid-nav" aria-label="Student navigation">
+      <div className="liquid-nav-inner">
+        <div className="liquid-nav-logo">
+          <MentoraLogo />
         </div>
-        <ChevronRight size={15} />
-      </div>
 
-      <div className="mb-5 grid grid-cols-2 gap-2 lg:grid-cols-1 student-nav-list">
-        {navItems.map((item) => (
-          <button
-            key={item.id}
-            className={`rail-button ${activeView === item.id ? "is-active" : ""}`}
-            onClick={() => onSelectView(item.id)}
-            type="button"
-          >
-            <span className="rail-icon">{viewIcons[item.id]}</span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold">{item.label}</span>
-              <span className="block truncate text-xs text-slate-400">{item.detail}</span>
-            </span>
-            <ChevronRight className="rail-chevron" size={16} />
+        <button className="liquid-profile-chip" onClick={() => onSelectView("profile")} type="button">
+          <span className="liquid-avatar">{initials}</span>
+          <span className="liquid-profile-copy">
+            <strong>{profile?.full_name ?? profile?.email ?? t.student}</strong>
+            <small>{t.student}</small>
+          </span>
+          <ChevronRight size={15} />
+        </button>
+
+        <nav className="liquid-nav-tabs" aria-label="Workspace sections">
+          {navItems.map((item) => {
+            const isActive = activeView === item.id;
+            return (
+              <button
+                key={item.id}
+                aria-current={isActive ? "page" : undefined}
+                className={`liquid-tab ${isActive ? "is-active" : ""}`}
+                onClick={() => onSelectView(item.id)}
+                title={`${item.label} - ${item.detail}`}
+                type="button"
+              >
+                <span className="liquid-tab-icon">{viewIcons[item.id]}</span>
+                <span className="liquid-tab-copy">
+                  <strong>{item.label}</strong>
+                  <small>{item.detail}</small>
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+
+        <section className="liquid-space-card" aria-label={t.currentSpace}>
+          <div>
+            <span>{t.currentSpace}</span>
+            <strong>{activeSpace?.name ?? t.noSpaceTitle}</strong>
+            <small>{activeSpace?.description ?? t.noSpaceDescription}</small>
+          </div>
+          <CreateSpaceButton busy={busy === "space"} label={t.newSpace} onCreate={onCreate} t={t} />
+        </section>
+
+        <div className="liquid-space-list" aria-label={t.spaces}>
+          {spaces.slice(0, 4).map((space) => (
+            <button
+              key={space.id}
+              className={`liquid-space-option ${activeSpace?.id === space.id ? "is-active" : ""}`}
+              onClick={() => onSelectSpace(space.id)}
+              type="button"
+            >
+              <BookOpen size={16} />
+              <span>{space.name}</span>
+            </button>
+          ))}
+          {spaces.length === 0 && <p>{t.noSpaceDescription}</p>}
+        </div>
+
+        <div className="liquid-nav-footer">
+          <button className="liquid-signout" onClick={onSignOut} type="button">
+            <LogOut size={16} />
+            <span>{t.signOut}</span>
           </button>
-        ))}
-      </div>
-
-      <div className="active-space-card mb-4 rounded-2xl border border-white/10 bg-white/[0.04] p-3">
-        <p className="text-xs font-bold uppercase text-slate-500">{t.currentSpace}</p>
-        <p className="mt-2 truncate text-lg font-semibold text-white">{activeSpace?.name ?? t.noSpaceTitle}</p>
-        <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-400">
-          {activeSpace?.description ?? t.noSpaceDescription}
-        </p>
-      </div>
-
-      <div className="student-spaces-header mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-xs font-bold uppercase text-slate-500">{t.spaces}</h2>
-        <CreateSpaceButton busy={busy === "space"} label={t.newSpace} onCreate={onCreate} t={t} />
-      </div>
-
-      <div className="space-y-2">
-        {spaces.map((space) => (
-          <button
-            key={space.id}
-            className={`space-button ${activeSpace?.id === space.id ? "is-active" : ""}`}
-            onClick={() => onSelectSpace(space.id)}
-            type="button"
-          >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/8 text-cyan-100">
-              <BookOpen size={17} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold">{space.name}</span>
-              <span className="block truncate text-xs text-slate-400">{space.description ?? t.personalWorkspace}</span>
-            </span>
-          </button>
-        ))}
-        {spaces.length === 0 && (
-          <EmptyState
-            compact
-            icon={<BookOpen size={20} />}
-            title={t.noSpaceTitle}
-            text={t.noSpaceDescription}
-          />
-        )}
-      </div>
-
-      <button className="logout-rail-button mt-4" onClick={onSignOut} type="button">
-        <span className="rail-icon">
-          <LogOut size={17} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold">{t.signOut}</span>
-        </span>
-      </button>
-
-      <div className="student-sidebar-promo">
-        <MentoraMascot />
-        <strong>{t.inviteFriends}</strong>
-        <p>{t.inviteFriendsText}</p>
+        </div>
       </div>
     </aside>
   );
@@ -1845,58 +1861,50 @@ function WorkspaceHeader({
   uploadBusy: boolean;
   t: Record<string, string>;
 }) {
-  if (activeView === "home" || activeView === "documents" || activeView === "tutor") {
+  const viewTitle = activeView === "home" ? t.dashboard : t[`${activeView}Title`];
+
+  if (activeView === "home") {
     return null;
   }
 
   return (
-    <div className="workspace-header border-b border-white/10 p-3 sm:p-4">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="min-w-0">
-          <div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase text-cyan-200">
-            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-cyan-300/10">{viewIcons[activeView]}</span>
-            {activeSpace?.name ?? t.dashboard}
-          </div>
-          <h1 className="text-2xl font-semibold leading-tight text-white sm:text-4xl">{t[`${activeView}Title`]}</h1>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <ModelSelector
-            models={models}
-            openRouterConnected={openRouterConnected}
-            openRouterServerConnected={openRouterServerConnected}
-            selectedModel={selectedModel}
-            t={t}
-            onSelect={onSelectModel}
-          />
-          {loading && (
-            <span className="inline-flex h-11 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm text-slate-300">
-              <Loader2 className="animate-spin text-cyan-200" size={16} />
-              {t.syncing}
-            </span>
-          )}
-          <UploadControl disabled={uploadBusy} loading={uploadBusy} label={t.uploadPdf} onUpload={onUpload} />
-        </div>
+    <div className="liquid-workspace-header">
+      <div className="liquid-workspace-title">
+        <span>
+          {viewIcons[activeView]}
+          {activeSpace?.name ?? t.dashboard}
+        </span>
+        <h1>{viewTitle}</h1>
       </div>
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="liquid-workspace-tools">
+        <ModelSelector
+          models={models}
+          openRouterConnected={openRouterConnected}
+          openRouterServerConnected={openRouterServerConnected}
+          selectedModel={selectedModel}
+          t={t}
+          onSelect={onSelectModel}
+        />
+        <UploadControl disabled={uploadBusy} loading={uploadBusy} label={t.uploadPdf} onUpload={onUpload} />
+        {loading && (
+          <span className="liquid-status-chip">
+            <Loader2 className="animate-spin" size={16} />
+            {t.syncing}
+          </span>
+        )}
+      </div>
+
+      <section className="liquid-metric-strip" aria-label={t.learningPulse}>
         <Metric icon={<FileText size={17} />} label={t.documents} value={documents.length.toString()} />
         <Metric icon={<CheckCircle2 size={17} />} label={t.ready} value={readyDocuments.length.toString()} tone="success" />
         <Metric icon={<Clock3 size={17} />} label={t.processing} value={processingDocuments.length.toString()} tone="warning" />
         <Metric icon={<Sparkles size={17} />} label={t.generated} value={artifacts.length.toString()} tone={failedDocuments.length > 0 ? "danger" : "accent"} />
-      </div>
-
-      <section className="learning-pulse-card mt-4">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-white">{t.learningPulse}</p>
-          <p className="mt-1 text-sm leading-6 text-slate-400">
-            {readiness > 0 ? t.readyToStudy : t.buildingIndex}
-          </p>
+        <div className="liquid-readiness-mini" aria-label={`${t.readiness} ${readiness}%`}>
+          <span>{readiness > 0 ? t.readyToStudy : t.buildingIndex}</span>
+          <div><i style={{ width: `${readiness}%` }} /></div>
+          <strong>{readiness}%</strong>
         </div>
-        <div className="pulse-meter" aria-label={`${t.readiness} ${readiness}%`}>
-          <span style={{ width: `${readiness}%` }} />
-        </div>
-        <strong>{readiness}%</strong>
       </section>
     </div>
   );
@@ -1926,22 +1934,14 @@ function RealStudentDashboard({
   t: Record<string, string>;
 }) {
   const firstName = (profile?.full_name ?? t.student).split(" ")[0] || t.student;
-  const materials = activeDocuments.slice(0, 5);
+  const materials = activeDocuments.slice(0, 4);
   const processingDocuments = activeDocuments.filter((document) =>
     ["pending", "processing"].includes(document.processing_status),
   );
   const failedDocuments = activeDocuments.filter((document) => document.processing_status === "failed");
   const readiness = activeDocuments.length > 0 ? Math.round((readyDocuments.length / activeDocuments.length) * 100) : 0;
-  const courseRows = activeSpace
-    ? [
-        {
-          name: activeSpace.name,
-          value: readiness,
-          tone: readiness >= 75 ? "mint" : readiness >= 40 ? "blue" : "violet",
-          detail: `${readyDocuments.length}/${Math.max(activeDocuments.length, 1)} ${t.sourcesReady}`,
-        },
-      ]
-    : [];
+  const nextAction = readyDocuments.length > 0 ? t.askFirstQuestion : t.uploadLibrary;
+  const nextActionDetail = readyDocuments.length > 0 ? t.readyToStudy : t.emptyLibraryText;
   const studyPlan = [
     {
       id: "upload",
@@ -1983,130 +1983,143 @@ function RealStudentDashboard({
   ].filter((item): item is string => Boolean(item));
 
   return (
-    <div className="student-dashboard">
-      <section className="student-dashboard-hero">
-        <div>
+    <div className="liquid-dashboard">
+      <section className="liquid-hero-card">
+        <div className="liquid-hero-copy">
+          <span className="liquid-kicker"><BrainCircuit size={16} /> {t.studyPulse}</span>
           <h2>{t.dashboard}, {firstName}</h2>
           <p>{t.dashboardWelcome}</p>
-          <div className="smart-action-bar">
-            <button onClick={onAsk} type="button">
+          <div className="liquid-hero-actions">
+            <LiquidButton className="liquid-primary-action" onClick={onAsk}>
               <MessageSquareText size={19} />
-              {t.dashboardAskPlaceholder}
-              <span><ChevronRight size={18} /></span>
-            </button>
-            <div>
-              <UploadControl disabled={busy === "upload"} loading={busy === "upload"} label={t.uploadPdf} onUpload={onUpload} />
-              <button className="quick-action-chip" onClick={() => onSelectView("documents")} type="button">{t.myMaterials}</button>
-              <button className="quick-action-chip" onClick={() => onSelectView("tools")} type="button">{t.studyTools}</button>
-            </div>
+              <span>{t.startStudy}</span>
+              <ChevronRight size={18} />
+            </LiquidButton>
+            <UploadControl disabled={busy === "upload"} loading={busy === "upload"} label={t.uploadPdf} onUpload={onUpload} />
+            <button className="liquid-secondary-chip" onClick={() => onSelectView("documents")} type="button">{t.myMaterials}</button>
+            <button className="liquid-secondary-chip" onClick={() => onSelectView("tools")} type="button">{t.studyTools}</button>
           </div>
         </div>
-        <div className="dashboard-hero-visual">
-          <MentoraMascot />
-          <BookOpen size={88} />
-        </div>
+        <aside className="liquid-next-panel" aria-label={t.recommendedSessions}>
+          <span>{t.recommendedSessions}</span>
+          <strong>{nextAction}</strong>
+          <p>{nextActionDetail}</p>
+          <div
+            className="liquid-readiness-ring"
+            aria-label={`${t.readiness} ${readiness}%`}
+            style={{ "--readiness": `${readiness}%` } as React.CSSProperties}
+          >
+            <b>{readiness}%</b>
+          </div>
+        </aside>
       </section>
 
-      <section className="dashboard-card-grid">
-        <div className="dashboard-column">
-          <article className="dashboard-widget dashboard-widget-space">
-            <header><h3>{t.myCourses}</h3><button onClick={() => onSelectView("documents")} type="button">{t.viewAll}</button></header>
-            <div className="course-list">
-              {courseRows.map(({ name, value, tone, detail }) => (
-                <div key={name} className={`course-row tone-${tone}`}>
-                  <span><BookOpen size={16} /></span>
-                  <strong>{name}</strong>
-                  <div><i style={{ width: `${value}%` }} /></div>
-                  <em>{detail}</em>
-                </div>
-              ))}
-              {courseRows.length === 0 && (
-                <EmptyState compact icon={<FolderOpen size={18} />} title={t.noSpaceTitle} text={t.noSpaceDescription} />
-              )}
+      <section className="liquid-dashboard-grid">
+        <article className="liquid-card liquid-card-large">
+          <header>
+            <span><BookOpen size={17} /> {t.myCourses}</span>
+            <button onClick={() => onSelectView("documents")} type="button">{t.viewAll}</button>
+          </header>
+          <div className="liquid-course-row">
+            <div>
+              <strong>{activeSpace?.name ?? t.noSpaceTitle}</strong>
+              <small>{activeSpace?.description ?? t.personalWorkspace}</small>
             </div>
-          </article>
+            <span>{readyDocuments.length}/{Math.max(activeDocuments.length, 1)} {t.sourcesReady}</span>
+          </div>
+          <div className="liquid-progress-track"><i style={{ width: `${readiness}%` }} /></div>
+          {!activeSpace && <p className="liquid-muted-note">{t.noSpaceDescription}</p>}
+        </article>
 
-          <article className="dashboard-widget dashboard-widget-actions">
-            <header><h3>{t.recommendedSessions}</h3><button onClick={() => onSelectView("tools")} type="button">{t.viewAll}</button></header>
-            <div className="session-list">
-              {recommendedSessions.map((session) => (
-                <button key={session.title} className={`tone-${session.tone}`} onClick={() => onSelectView(session.view)} type="button">
-                  <Sparkles size={17} />
-                  <span>{session.title}</span>
-                  <small>{session.detail}</small>
-                  <PlayCircle size={18} />
-                </button>
-              ))}
-            </div>
-          </article>
-        </div>
+        <article className="liquid-card">
+          <header>
+            <span><FileText size={17} /> {t.recentMaterials}</span>
+            <button onClick={() => onSelectView("documents")} type="button">{t.viewAll}</button>
+          </header>
+          <div className="liquid-list">
+            {materials.map((document) => (
+              <button key={document.id} onClick={() => onSelectView("documents")} type="button">
+                <FileText size={17} />
+                <span>{document.file_name}</span>
+                <small>{document.processing_status === "ready" ? t.ready : t.processing}</small>
+              </button>
+            ))}
+            {materials.length === 0 && (
+              <EmptyState compact icon={<FileText size={18} />} title={t.emptyLibraryTitle} text={t.emptyLibraryText} />
+            )}
+          </div>
+        </article>
 
-        <div className="dashboard-column">
-          <article className="dashboard-widget dashboard-widget-materials">
-            <header><h3>{t.recentMaterials}</h3><button onClick={() => onSelectView("documents")} type="button">{t.viewAll}</button></header>
-            <div className="recent-list">
-              {materials.map((document) => (
-                <button key={document.id} onClick={() => onSelectView("documents")} type="button">
-                  <FileText size={17} />
-                  <span>{document.file_name}</span>
-                  <small>{document.processing_status === "ready" ? t.ready : t.processing}</small>
-                </button>
-              ))}
-              {materials.length === 0 && (
-                <EmptyState compact icon={<FileText size={18} />} title={t.emptyLibraryTitle} text={t.emptyLibraryText} />
-              )}
-            </div>
-          </article>
-
-          <article className="dashboard-widget dashboard-widget-tutor tutor-recommendation-card">
-            <header><h3>{t.tutorRecommendations}</h3></header>
+        <article className="liquid-card liquid-card-tutor">
+          <header>
+            <span><Sparkles size={17} /> {t.tutorRecommendations}</span>
+          </header>
+          <div className="liquid-tutor-body">
             <MentoraMascot />
             <ul>
               {recommendations.map((recommendation) => (
                 <li key={recommendation}>{recommendation}</li>
               ))}
             </ul>
-            <button onClick={() => onSelectView("tutor")} type="button">{t.viewMoreRecommendations}</button>
-          </article>
-        </div>
+          </div>
+          <button className="liquid-card-link" onClick={() => onSelectView("tutor")} type="button">{t.viewMoreRecommendations}</button>
+        </article>
 
-        <div className="dashboard-column dashboard-column-plan">
-          <article className="dashboard-widget dashboard-widget-plan">
-            <header><h3>{t.upcomingExams}</h3><button onClick={() => onSelectView("tools")} type="button">{t.viewCalendar}</button></header>
-            <div className="exam-list">
-              {studyPlan.map((item, index) => (
-                <div key={item.id}>
-                  <span>{index + 1}</span>
-                  <strong>{item.title}</strong>
-                  <em>{item.detail}</em>
-                  <button aria-label={item.title} onClick={() => onSelectView(item.view)} type="button">
-                    {item.icon}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </article>
+        <article className="liquid-card">
+          <header>
+            <span><Clock3 size={17} /> {t.upcomingExams}</span>
+            <button onClick={() => onSelectView("tools")} type="button">{t.viewCalendar}</button>
+          </header>
+          <div className="liquid-plan-list">
+            {studyPlan.map((item, index) => (
+              <button key={item.id} onClick={() => onSelectView(item.view)} type="button">
+                <span>{index + 1}</span>
+                <strong>{item.title}</strong>
+                <small>{item.detail}</small>
+                {item.icon}
+              </button>
+            ))}
+          </div>
+        </article>
 
-          <article className="dashboard-widget dashboard-widget-tools">
-            <header><h3>{t.quickTools}</h3></header>
-            <div className="quick-tools-grid">
-              {[
-                [t.createSummary, <FileText key="summary" size={20} />, "tools"],
-                [t.createFlashcards, <Layers3 key="cards" size={20} />, "tools"],
-                [t.generateQuiz, <ClipboardList key="quiz" size={20} />, "tools"],
-                [t.uploadLibrary, <Upload key="upload" size={20} />, "documents"],
-              ].map(([label, icon, view]) => (
-                <button key={String(label)} onClick={() => onSelectView(view as AppView)} type="button">
-                  {icon}
-                  <span>{label}</span>
-                </button>
-              ))}
-            </div>
-          </article>
-        </div>
+        <article className="liquid-card">
+          <header>
+            <span><WandSparkles size={17} /> {t.quickTools}</span>
+          </header>
+          <div className="liquid-tools-grid">
+            {[
+              [t.createSummary, <FileText key="summary" size={20} />, "tools"],
+              [t.createFlashcards, <Layers3 key="cards" size={20} />, "tools"],
+              [t.generateQuiz, <ClipboardList key="quiz" size={20} />, "tools"],
+              [t.uploadLibrary, <Upload key="upload" size={20} />, "documents"],
+            ].map(([label, icon, view]) => (
+              <button key={String(label)} onClick={() => onSelectView(view as AppView)} type="button">
+                {icon}
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        </article>
+
+        <article className="liquid-card liquid-card-sessions">
+          <header>
+            <span><PlayCircle size={17} /> {t.recommendedSessions}</span>
+            <button onClick={() => onSelectView("tools")} type="button">{t.viewAll}</button>
+          </header>
+          <div className="liquid-session-list">
+            {recommendedSessions.map((session) => (
+              <button key={session.title} className={`tone-${session.tone}`} onClick={() => onSelectView(session.view)} type="button">
+                <Sparkles size={17} />
+                <span>{session.title}</span>
+                <small>{session.detail}</small>
+                <PlayCircle size={18} />
+              </button>
+            ))}
+          </div>
+        </article>
       </section>
 
-      <section className="materials-showcase">
+      <section className="liquid-materials-band">
         <header>
           <h3>{t.organizedMaterials}</h3>
           <span>{readyDocuments.length} {t.sourcesReady} · {artifacts.length} {t.generated}</span>
@@ -2119,14 +2132,12 @@ function RealStudentDashboard({
               <small>{document.processing_status === "ready" ? "PDF" : t.processing}</small>
             </article>
           ))}
-          <button className="add-material-card" onClick={() => onSelectView("documents")} type="button">
-            <Plus size={28} />
+          <button className="liquid-add-material" onClick={() => onSelectView("documents")} type="button">
+            <Plus size={24} />
             {t.uploadPdf}
           </button>
         </div>
       </section>
-
-      {!activeSpace && <p className="mt-3 text-sm text-slate-400">{t.noSpaceDescription}</p>}
     </div>
   );
 }
@@ -2830,41 +2841,47 @@ function InsightPanel({
   readyDocuments: DocumentRecord[];
   t: Record<string, string>;
 }) {
-  return (
-    <>
-      <section className="dashboard-panel p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-white">{t.studyPulse}</h2>
-            <p className="mt-1 text-xs text-slate-400">{profile?.full_name ?? profile?.email ?? t.student}</p>
-          </div>
-          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-cyan-300/10 text-cyan-100">
-            {loading ? <Loader2 className="animate-spin" size={18} /> : <Flame size={18} />}
-          </span>
-        </div>
-        <div className="space-y-3">
-          <ProgressRow label={t.sourcesReady} value={readyDocuments.length} total={Math.max(documents.length, 1)} />
-          <ProgressRow label={t.generatedOutput} value={artifacts.length} total={Math.max(artifacts.length + 2, 3)} />
-        </div>
-      </section>
+  const readiness = documents.length > 0 ? Math.round((readyDocuments.length / documents.length) * 100) : 0;
+  const recentItems = [
+    ...documents.slice(0, 3).map((document) => ({ id: document.id, kind: "document" as const, node: <DocumentMini document={document} t={t} /> })),
+    ...artifacts.slice(0, 2).map((artifact) => ({ id: artifact.id, kind: "artifact" as const, node: <ArtifactMini artifact={artifact} t={t} /> })),
+  ];
 
-      <section className="dashboard-panel min-h-0 flex-1 p-4">
-        <h2 className="mb-3 text-sm font-semibold text-white">{t.recentActivity}</h2>
-        <div className="panel-scroll-shell panel-scroll-shell-rail">
-          <div className="panel-scroll-area max-h-[560px] space-y-3">
-            {documents.slice(0, 4).map((document) => (
-              <DocumentMini key={document.id} document={document} t={t} />
-            ))}
-            {artifacts.slice(0, 3).map((artifact) => (
-              <ArtifactMini key={artifact.id} artifact={artifact} t={t} />
-            ))}
-            {documents.length === 0 && artifacts.length === 0 && (
-              <EmptyState compact icon={<Sparkles size={18} />} title={t.emptyActivityTitle} text={t.emptyActivityText} />
-            )}
-          </div>
+  return (
+    <section className="liquid-study-pulse" aria-label={t.studyPulse}>
+      <div className="liquid-pulse-header">
+        <div>
+          <span>{t.studyPulse}</span>
+          <h2>{profile?.full_name ?? profile?.email ?? t.student}</h2>
         </div>
-      </section>
-    </>
+        <span className="liquid-pulse-icon">
+          {loading ? <Loader2 className="animate-spin" size={18} /> : <Flame size={18} />}
+        </span>
+      </div>
+
+      <div className="liquid-pulse-score">
+        <strong>{readiness}%</strong>
+        <span>{readiness > 0 ? t.readyToStudy : t.buildingIndex}</span>
+        <div><i style={{ width: `${readiness}%` }} /></div>
+      </div>
+
+      <div className="liquid-pulse-metrics">
+        <ProgressRow label={t.sourcesReady} value={readyDocuments.length} total={Math.max(documents.length, 1)} />
+        <ProgressRow label={t.generatedOutput} value={artifacts.length} total={Math.max(artifacts.length + 2, 3)} />
+      </div>
+
+      <div className="liquid-recent-activity">
+        <h3>{t.recentActivity}</h3>
+        <div className="liquid-activity-list">
+          {recentItems.map((item) => (
+            <div key={`${item.kind}-${item.id}`}>{item.node}</div>
+          ))}
+          {recentItems.length === 0 && (
+            <EmptyState compact icon={<Sparkles size={18} />} title={t.emptyActivityTitle} text={t.emptyActivityText} />
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 

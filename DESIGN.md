@@ -31,6 +31,35 @@ Mentora uses the following core Design Dials to guide its interface layouts and 
 ### Implementation Integrity
 - **Utility CSS:** Adjust styling directly in the React component tree using Tailwind utilities. Do not write thousands of lines of overrides using `!important` in `globals.css` as it disables Tailwind class responsiveness and customizability.
 
+
+## Mentora Liquid Workspace
+
+The authenticated student dashboard uses a restrained iOS-inspired Liquid Glass direction. Liquid materials are reserved for navigation, command surfaces, and primary action controls; content cards stay mostly solid/translucent for readability.
+
+### Liquid Tokens
+- **Background:** `#f7f9ff` with subtle blue/cyan radial light only.
+- **Ink:** `#071038`; **body copy:** `#17224a`; **muted:** `#4c5a7a`.
+- **Active accent:** Mentora blue/cyan only (`#2563eb` / `#06b6d4`) for dashboard navigation, focus, progress, and primary actions.
+- **Glass tint:** white at `0.58-0.90` alpha with `blur(20px-26px)` and `saturate(150%)`.
+- **Rim/border:** blue-tinted borders around `rgba(37, 99, 235, 0.09-0.18)` plus white inset highlights.
+- **Shadow:** soft blue-tinted depth (`rgba(42, 64, 128, 0.06-0.13)`), never heavy black shadows.
+- **Radius:** `18px` for controls, `26-30px` for shell cards and glass containers.
+- **Motion:** spring-based hover/press only; no infinite shimmer, no constant ambient loops.
+
+### Reusable Materials
+- **`GlassNav`:** rounded vertical tab rail with active liquid capsule, compact tablet mode, and mobile bottom tab bar.
+- **`GlassToolbar`:** sticky command bar with current space, current view, one primary `Start Study` CTA, language/help/sign-out utilities.
+- **`LiquidButton`:** animated glassy primary button with shine layer, spring hover/press, disabled state, and reduced-motion fallback.
+- **`SolidContentCard`:** readable white/translucent cards for materials, plans, tutor guidance, and quick tools.
+- **`MutedInset`:** quiet inset rows for lists, progress, study plan steps, and recent material activity.
+
+### Dashboard Rules
+- Keep one dominant action: `Start Study`. Upload, materials, and tools are secondary chips.
+- Use glass for controls and navigation, not every content surface.
+- Preserve WCAG AA contrast, visible keyboard focus, and `prefers-reduced-motion` behavior.
+- Mobile must use a purpose-built bottom glass tab bar instead of squeezing the desktop sidebar.
+- Do not add new dashboard styling by piling more `!important` overrides into `globals.css`; prefer component classes and small reusable material classes.
+
 ## Required Screens
 
 1. Landing page:
