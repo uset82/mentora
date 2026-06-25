@@ -1949,6 +1949,12 @@ function RealStudentDashboard({
   const readiness = activeDocuments.length > 0 ? Math.round((readyDocuments.length / activeDocuments.length) * 100) : 0;
   const nextAction = readyDocuments.length > 0 ? t.askFirstQuestion : t.uploadLibrary;
   const nextActionDetail = readyDocuments.length > 0 ? t.readyToStudy : t.emptyLibraryText;
+  const readinessLabel = readiness >= 80 ? t.readyToStudy : readiness > 0 ? t.buildingIndex : t.emptyLibraryTitle;
+  const cockpitStats = [
+    { label: t.ready, value: readyDocuments.length.toString() },
+    { label: t.processing, value: processingDocuments.length.toString() },
+    { label: t.generated, value: artifacts.length.toString() },
+  ];
   const studyPlan = [
     {
       id: "upload",
@@ -1983,70 +1989,99 @@ function RealStudentDashboard({
           { title: t.uploadLibrary, detail: t.emptyLibraryText, tone: "coral", view: "documents" as const },
         ];
   const recommendations = [
+    readyDocuments.length > 0 ? t.readyToStudy : t.buildingIndex,
     activeDocuments.length === 0 ? t.emptyLibraryText : `${activeDocuments.length} ${t.documents}`,
     processingDocuments.length > 0 ? `${processingDocuments.length} ${t.processing}` : null,
     failedDocuments.length > 0 ? `${failedDocuments.length} ${t.failed}` : null,
-    readyDocuments.length > 0 ? t.readyToStudy : t.buildingIndex,
   ].filter((item): item is string => Boolean(item));
 
   return (
-    <div className="liquid-dashboard">
-      <section className="liquid-hero-card">
-        <div className="liquid-hero-copy">
+    <div className="liquid-dashboard cockpit-dashboard">
+      <section className="liquid-hero-card cockpit-hero-card">
+        <div className="cockpit-hero-orb" aria-hidden="true" />
+        <div className="liquid-hero-copy cockpit-hero-copy">
           <span className="liquid-kicker"><BrainCircuit size={16} /> {t.studyPulse}</span>
           <h2>{t.dashboard}, {firstName}</h2>
-          <p>{t.dashboardWelcome}</p>
-          <div className="liquid-hero-actions">
-            <LiquidButton className="liquid-primary-action" onClick={onAsk}>
+          <p>{readyDocuments.length > 0 ? t.askFirstQuestionText : t.dashboardWelcome}</p>
+          <div className="cockpit-signal-strip" aria-label={t.learningPulse}>
+            {cockpitStats.map((stat) => (
+              <span key={stat.label}>
+                <strong>{stat.value}</strong>
+                <small>{stat.label}</small>
+              </span>
+            ))}
+          </div>
+          <div className="liquid-hero-actions cockpit-hero-actions">
+            <LiquidButton className="liquid-primary-action cockpit-primary-action" onClick={onAsk}>
               <MessageSquareText size={19} />
               <span>{t.startStudy}</span>
               <ChevronRight size={18} />
             </LiquidButton>
             <UploadControl disabled={busy === "upload"} loading={busy === "upload"} label={t.uploadPdf} onUpload={onUpload} />
-            <button className="liquid-secondary-chip" onClick={() => onSelectView("documents")} type="button">{t.myMaterials}</button>
-            <button className="liquid-secondary-chip" onClick={() => onSelectView("tools")} type="button">{t.studyTools}</button>
+            <button className="liquid-secondary-chip" onClick={() => onSelectView("tools")} type="button">{t.quickTools}</button>
           </div>
         </div>
-        <aside className="liquid-next-panel" aria-label={t.recommendedSessions}>
+        <aside className="liquid-next-panel cockpit-next-panel" aria-label={t.recommendedSessions}>
+          <div className="cockpit-next-marker" aria-hidden="true" />
           <span>{t.recommendedSessions}</span>
           <strong>{nextAction}</strong>
           <p>{nextActionDetail}</p>
-          <div
-            className="liquid-readiness-ring"
-            aria-label={`${t.readiness} ${readiness}%`}
-            style={{ "--readiness": `${readiness}%` } as React.CSSProperties}
-          >
-            <b>{readiness}%</b>
+          <div className="cockpit-next-footer">
+            <div
+              className="liquid-readiness-ring"
+              aria-label={`${t.readiness} ${readiness}%`}
+              style={{ "--readiness": `${readiness}%` } as React.CSSProperties}
+            >
+              <b>{readiness}%</b>
+            </div>
+            <button onClick={() => onSelectView(readyDocuments.length > 0 ? "tutor" : "documents")} type="button">
+              {readyDocuments.length > 0 ? t.askFirstQuestion : t.uploadLibrary}
+              <ArrowUpRight size={16} />
+            </button>
           </div>
         </aside>
       </section>
 
-      <section className="liquid-dashboard-grid">
-        <article className="liquid-card liquid-card-large">
+      <section className="cockpit-topology" aria-label={t.learningPulse}>
+        <article className="liquid-card cockpit-course-card">
           <header>
             <span><BookOpen size={17} /> {t.myCourses}</span>
             <button onClick={() => onSelectView("documents")} type="button">{t.viewAll}</button>
           </header>
-          <div className="liquid-course-row">
+          <div className="cockpit-course-main">
             <div>
+              <small>{t.currentSpace}</small>
               <strong>{activeSpace?.name ?? t.noSpaceTitle}</strong>
-              <small>{activeSpace?.description ?? t.personalWorkspace}</small>
+              <p>{activeSpace?.description ?? t.personalWorkspace}</p>
             </div>
-            <span>{readyDocuments.length}/{Math.max(activeDocuments.length, 1)} {t.sourcesReady}</span>
+            <em>{readyDocuments.length}/{Math.max(activeDocuments.length, 1)}</em>
           </div>
           <div className="liquid-progress-track"><i style={{ width: `${readiness}%` }} /></div>
-          {!activeSpace && <p className="liquid-muted-note">{t.noSpaceDescription}</p>}
+          <div className="liquid-course-meta cockpit-metric-row">
+            <span>{activeDocuments.length} {t.documents}</span>
+            <span>{artifacts.length} {t.generated}</span>
+            <span>{processingDocuments.length} {t.processing}</span>
+          </div>
         </article>
 
-        <article className="liquid-card">
+        <article className="liquid-card cockpit-pulse-card">
+          <span>{t.readiness}</span>
+          <strong>{readiness}%</strong>
+          <p>{readinessLabel}</p>
+          <div className="liquid-progress-track"><i style={{ width: `${readiness}%` }} /></div>
+        </article>
+      </section>
+
+      <section className="liquid-dashboard-grid cockpit-grid">
+        <article className="liquid-card cockpit-materials-card">
           <header>
             <span><FileText size={17} /> {t.recentMaterials}</span>
             <button onClick={() => onSelectView("documents")} type="button">{t.viewAll}</button>
           </header>
-          <div className="liquid-list">
-            {materials.map((document) => (
+          <div className="liquid-list cockpit-material-list">
+            {materials.map((document, index) => (
               <button key={document.id} onClick={() => onSelectView("documents")} type="button">
-                <FileText size={17} />
+                <span className={`material-thumb material-thumb-${index % 4}`} />
                 <span>{document.file_name}</span>
                 <small>{document.processing_status === "ready" ? t.ready : t.processing}</small>
               </button>
@@ -2057,27 +2092,12 @@ function RealStudentDashboard({
           </div>
         </article>
 
-        <article className="liquid-card liquid-card-tutor">
-          <header>
-            <span><Sparkles size={17} /> {t.tutorRecommendations}</span>
-          </header>
-          <div className="liquid-tutor-body">
-            <MentoraMascot />
-            <ul>
-              {recommendations.map((recommendation) => (
-                <li key={recommendation}>{recommendation}</li>
-              ))}
-            </ul>
-          </div>
-          <button className="liquid-card-link" onClick={() => onSelectView("tutor")} type="button">{t.viewMoreRecommendations}</button>
-        </article>
-
-        <article className="liquid-card">
+        <article className="liquid-card cockpit-plan-card">
           <header>
             <span><Clock3 size={17} /> {t.upcomingExams}</span>
-            <button onClick={() => onSelectView("tools")} type="button">{t.viewCalendar}</button>
+            <button onClick={() => onSelectView("tools")} type="button">{t.viewAll}</button>
           </header>
-          <div className="liquid-plan-list">
+          <div className="liquid-plan-list cockpit-plan-list">
             {studyPlan.map((item, index) => (
               <button key={item.id} onClick={() => onSelectView(item.view)} type="button">
                 <span>{index + 1}</span>
@@ -2089,11 +2109,30 @@ function RealStudentDashboard({
           </div>
         </article>
 
-        <article className="liquid-card">
+        <article className="liquid-card liquid-card-tutor cockpit-tutor-card">
+          <header>
+            <span><Sparkles size={17} /> {t.tutorRecommendations}</span>
+            <button onClick={() => onSelectView("tutor")} type="button">{t.viewMoreRecommendations}</button>
+          </header>
+          <div className="liquid-tutor-body">
+            <MentoraMascot />
+            <ul>
+              {recommendations.map((recommendation) => (
+                <li key={recommendation}>{recommendation}</li>
+              ))}
+            </ul>
+          </div>
+          <button className="cockpit-tutor-action" onClick={() => onSelectView("tutor")} type="button">
+            {t.startStudy}
+            <ChevronRight size={16} />
+          </button>
+        </article>
+
+        <article className="liquid-card cockpit-tools-card">
           <header>
             <span><WandSparkles size={17} /> {t.quickTools}</span>
           </header>
-          <div className="liquid-tools-grid">
+          <div className="liquid-tools-grid cockpit-tools-grid">
             {[
               [t.createSummary, <FileText key="summary" size={20} />, "tools"],
               [t.createFlashcards, <Layers3 key="cards" size={20} />, "tools"],
@@ -2108,12 +2147,12 @@ function RealStudentDashboard({
           </div>
         </article>
 
-        <article className="liquid-card liquid-card-sessions">
+        <article className="liquid-card liquid-card-sessions cockpit-sessions-card">
           <header>
             <span><PlayCircle size={17} /> {t.recommendedSessions}</span>
             <button onClick={() => onSelectView("tools")} type="button">{t.viewAll}</button>
           </header>
-          <div className="liquid-session-list">
+          <div className="liquid-session-list cockpit-session-list">
             {recommendedSessions.map((session) => (
               <button key={session.title} className={`tone-${session.tone}`} onClick={() => onSelectView(session.view)} type="button">
                 <Sparkles size={17} />
@@ -2124,26 +2163,6 @@ function RealStudentDashboard({
             ))}
           </div>
         </article>
-      </section>
-
-      <section className="liquid-materials-band">
-        <header>
-          <h3>{t.organizedMaterials}</h3>
-          <span>{readyDocuments.length} {t.sourcesReady} · {artifacts.length} {t.generated}</span>
-        </header>
-        <div>
-          {materials.map((document, index) => (
-            <article key={document.id}>
-              <span className={`material-thumb material-thumb-${index % 4}`} />
-              <strong>{document.file_name}</strong>
-              <small>{document.processing_status === "ready" ? "PDF" : t.processing}</small>
-            </article>
-          ))}
-          <button className="liquid-add-material" onClick={() => onSelectView("documents")} type="button">
-            <Plus size={24} />
-            {t.uploadPdf}
-          </button>
-        </div>
       </section>
     </div>
   );
