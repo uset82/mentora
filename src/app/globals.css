@@ -11651,3 +11651,395 @@ button:active:not(:disabled),
     grid-template-columns: 40px minmax(0, 1fr);
   }
 }
+
+/* Clean Study Navigation: fewer repeated actions, one primary next step. */
+.liquid-tab {
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+}
+
+.liquid-tab-badge {
+  display: grid;
+  min-width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(37, 99, 235, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--liquid-blue);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.liquid-tab.is-active .liquid-tab-badge {
+  border-color: rgba(37, 99, 235, 0.22);
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.liquid-space-card {
+  align-items: center;
+}
+
+.liquid-space-card small {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+}
+
+.cockpit-next-footer .upload-button {
+  min-height: 44px;
+  border-color: rgba(255, 255, 255, 0.25);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #0b1b42;
+  box-shadow: 0 14px 30px rgba(31, 55, 108, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.cockpit-path-list {
+  display: grid;
+  gap: 10px;
+}
+
+.cockpit-path-step {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto 20px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(21, 93, 252, 0.1);
+  border-radius: 20px;
+  background: linear-gradient(135deg, #ffffff, #f4f8ff);
+  padding: 12px;
+  color: var(--liquid-copy);
+}
+
+.cockpit-path-step > span {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(21, 93, 252, 0.12), rgba(6, 182, 212, 0.12));
+  color: var(--liquid-blue);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.cockpit-path-step strong,
+.cockpit-path-step small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cockpit-path-step strong {
+  color: var(--liquid-ink);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.cockpit-path-step small {
+  margin-top: 2px;
+  color: var(--liquid-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.cockpit-path-step em {
+  border: 1px solid rgba(37, 99, 235, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 6px 8px;
+  color: var(--liquid-blue);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.cockpit-path-step svg {
+  color: var(--liquid-blue);
+}
+
+.cockpit-card-note {
+  color: var(--liquid-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.cockpit-practice-preview {
+  display: grid;
+  gap: 10px;
+}
+
+.cockpit-practice-preview div {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 3px 10px;
+  align-items: center;
+  border: 1px solid rgba(21, 93, 252, 0.1);
+  border-radius: 18px;
+  background: linear-gradient(135deg, #ffffff, #f4f8ff);
+  padding: 12px;
+}
+
+.cockpit-practice-preview span {
+  display: grid;
+  grid-row: span 2;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(21, 93, 252, 0.12), rgba(6, 182, 212, 0.12));
+  color: var(--liquid-blue);
+}
+
+.cockpit-practice-preview strong {
+  color: var(--liquid-ink);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.cockpit-practice-preview small {
+  color: var(--liquid-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.tutor-chat-actions {
+  align-items: flex-start;
+}
+
+.tutor-settings-panel {
+  position: relative;
+}
+
+.tutor-settings-panel summary {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(49, 88, 255, 0.1);
+  border-radius: 999px;
+  background: #ffffff;
+  padding: 0 12px;
+  color: var(--mentora-blue);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 850;
+  list-style: none;
+}
+
+.tutor-settings-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.tutor-settings-panel > div {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 40;
+  display: grid;
+  width: min(440px, calc(100vw - 48px));
+  gap: 10px;
+  border: 1px solid rgba(49, 88, 255, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  padding: 12px;
+  box-shadow: 0 20px 44px rgba(42, 64, 128, 0.16);
+}
+
+.tutor-settings-panel > div > span {
+  color: var(--mentora-blue);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.tutor-settings-panel > div > div:first-of-type {
+  border-color: rgba(49, 88, 255, 0.1);
+  background: #f5f7ff;
+}
+
+.tutor-settings-panel > div > div:first-of-type button {
+  color: var(--mentora-muted);
+}
+
+.tutor-settings-panel > div > div:first-of-type button[class*="bg-cyan"] {
+  background: #ffffff;
+  color: var(--mentora-blue);
+}
+
+.tutor-source-empty {
+  display: grid;
+  gap: 10px;
+}
+
+.practice-studio-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.42fr) minmax(0, 0.58fr);
+}
+
+.practice-generator-panel {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-width: 0;
+  border: 1px solid rgba(49, 88, 255, 0.08);
+  border-radius: 22px;
+  background: linear-gradient(180deg, #ffffff 0%, #eef4ff 100%);
+  padding: 20px;
+  color: var(--mentora-deep);
+  box-shadow: var(--mentora-shadow);
+}
+
+.practice-generator-panel header {
+  display: grid;
+  gap: 8px;
+}
+
+.practice-generator-panel header > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--mentora-blue);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.practice-generator-panel h2 {
+  color: var(--mentora-deep);
+  font-size: 32px;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1.05;
+}
+
+.practice-generator-panel p {
+  color: var(--mentora-muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.practice-segmented {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  border: 1px solid rgba(49, 88, 255, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 6px;
+}
+
+.practice-segmented button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 13px;
+  color: var(--mentora-muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.practice-segmented button.is-selected {
+  background: #ffffff;
+  color: var(--mentora-blue);
+  box-shadow: 0 8px 18px rgba(42, 64, 128, 0.08);
+}
+
+.practice-selected-card {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 14px;
+  border: 1px solid rgba(49, 88, 255, 0.1);
+  border-radius: 20px;
+  background: #ffffff;
+  padding: 16px;
+}
+
+.practice-selected-card > span {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border-radius: 18px;
+  background: #f1f4ff;
+  color: var(--mentora-blue);
+}
+
+.practice-selected-card strong {
+  color: var(--mentora-deep);
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.practice-selected-card button {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--mentora-blue), #2289ff);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 950;
+  box-shadow: 0 16px 30px rgba(49, 88, 255, 0.24);
+}
+
+.practice-selected-card button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.practice-source-needed {
+  display: grid;
+  gap: 12px;
+}
+
+.practice-model-note {
+  border: 1px solid rgba(49, 88, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 12px;
+  color: var(--mentora-blue);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+@media (max-width: 980px) {
+  .practice-studio-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .liquid-tab {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+  }
+
+  .cockpit-path-step {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+
+  .cockpit-path-step em,
+  .cockpit-path-step svg {
+    grid-column: 2;
+  }
+
+  .practice-segmented {
+    grid-template-columns: 1fr;
+  }
+
+  .tutor-settings-panel > div {
+    right: auto;
+    left: 0;
+  }
+
+  .practice-generator-panel h2 {
+    font-size: 26px;
+  }
+}
