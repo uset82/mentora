@@ -18,6 +18,9 @@ export type LearningProfile = {
   practiceStyle?: string;
   birthDate?: string;
   birthPlace?: string;
+  birthCountry?: string;
+  birthCountryCode?: string;
+  birthCity?: string;
   birthTime?: string;
   onboardingComplete?: boolean;
   updatedAt?: string;

@@ -76,8 +76,18 @@ const learningProfileKeys = [
 ] as const;
 
 type LearningProfileOptionKey = (typeof learningProfileKeys)[number];
-type PersonalProfileKey = "birthDate" | "birthPlace" | "birthTime";
+type PersonalProfileKey = "birthDate" | "birthPlace" | "birthCountryCode" | "birthCity" | "birthTime";
 type LearningProfileDraft = Required<Pick<LearningProfile, LearningProfileOptionKey | PersonalProfileKey>>;
+type BirthCountryOption = {
+  code: string;
+  labels: Record<Locale, string>;
+  aliases: string[];
+  cities: string[];
+};
+type SelectOption = {
+  value: string;
+  label: string;
+};
 
 function isLearningProfileComplete(draft: LearningProfileDraft) {
   return learningProfileKeys.every((key) => draft[key].trim().length > 0);
@@ -91,6 +101,110 @@ function learningProfileOptions(t: Record<string, string>): Record<LearningProfi
     focusSupport: [t.focusShortChunks, t.focusCalmLayout, t.focusChecklist, t.focusReminders, t.focusFlexiblePace],
     practiceStyle: [t.practiceExamQuestions, t.practiceFlashcards, t.practiceGuidedExercises, t.practiceTeachBack, t.practiceMixed],
     studyPreference: [t.preferenceActiveRecall, t.preferenceSpacedReview, t.preferenceReadingNotes, t.preferenceVideoAudio, t.preferenceCollaborative],
+  };
+}
+
+const birthCountryCatalog: BirthCountryOption[] = [
+  { code: "PE", labels: { es: "Peru", en: "Peru" }, aliases: ["peru", "pe"], cities: ["Lima", "Arequipa", "Cusco", "Trujillo", "Chiclayo"] },
+  { code: "US", labels: { es: "Estados Unidos", en: "United States" }, aliases: ["estados unidos", "united states", "usa", "us"], cities: ["Miami", "New York", "Los Angeles", "Houston", "Chicago"] },
+  { code: "NO", labels: { es: "Noruega", en: "Norway" }, aliases: ["noruega", "norway", "no"], cities: ["Oslo", "Bergen", "Trondheim", "Stavanger"] },
+  { code: "ES", labels: { es: "Espana", en: "Spain" }, aliases: ["espana", "spain", "es"], cities: ["Madrid", "Barcelona", "Valencia", "Sevilla", "Malaga"] },
+  { code: "MX", labels: { es: "Mexico", en: "Mexico" }, aliases: ["mexico", "mx"], cities: ["Ciudad de Mexico", "Guadalajara", "Monterrey", "Puebla", "Tijuana"] },
+  { code: "CO", labels: { es: "Colombia", en: "Colombia" }, aliases: ["colombia", "co"], cities: ["Bogota", "Medellin", "Cali", "Barranquilla", "Cartagena"] },
+  { code: "AR", labels: { es: "Argentina", en: "Argentina" }, aliases: ["argentina", "ar"], cities: ["Buenos Aires", "Cordoba", "Rosario", "Mendoza", "La Plata"] },
+  { code: "CL", labels: { es: "Chile", en: "Chile" }, aliases: ["chile", "cl"], cities: ["Santiago", "Valparaiso", "Concepcion", "La Serena", "Antofagasta"] },
+  { code: "EC", labels: { es: "Ecuador", en: "Ecuador" }, aliases: ["ecuador", "ec"], cities: ["Quito", "Guayaquil", "Cuenca", "Manta", "Loja"] },
+  { code: "VE", labels: { es: "Venezuela", en: "Venezuela" }, aliases: ["venezuela", "ve"], cities: ["Caracas", "Maracaibo", "Valencia", "Barquisimeto", "Maracay"] },
+  { code: "BR", labels: { es: "Brasil", en: "Brazil" }, aliases: ["brasil", "brazil", "br"], cities: ["Sao Paulo", "Rio de Janeiro", "Brasilia", "Salvador", "Fortaleza"] },
+];
+
+function normalizeLocationText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function toLocationTitle(value: string) {
+  return value
+    .trim()
+    .split(/\s+/)
+    .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase() : ""))
+    .join(" ");
+}
+
+function getBirthCountryOption(countryCode: string) {
+  return birthCountryCatalog.find((country) => country.code === countryCode) ?? null;
+}
+
+function getBirthCountryLabel(countryCode: string, locale: Locale) {
+  return getBirthCountryOption(countryCode)?.labels[locale] ?? "";
+}
+
+function getBirthCountryOptions(locale: Locale): SelectOption[] {
+  return birthCountryCatalog.map((country) => ({
+    value: country.code,
+    label: country.labels[locale],
+  }));
+}
+
+function findBirthCountryByText(value: string) {
+  const normalized = normalizeLocationText(value);
+  return (
+    birthCountryCatalog.find((country) => {
+      const labels = Object.values(country.labels).map(normalizeLocationText);
+      return country.aliases.includes(normalized) || labels.includes(normalized);
+    }) ?? null
+  );
+}
+
+function formatBirthPlace(city: string, countryCode: string, locale: Locale) {
+  const cleanCity = city.trim();
+  const country = getBirthCountryLabel(countryCode, locale);
+
+  if (cleanCity && country) {
+    return `${cleanCity}, ${country}`;
+  }
+
+  return cleanCity || country;
+}
+
+function parseBirthLocation(learningProfile: LearningProfile) {
+  const storedCountryCode = String(learningProfile.birthCountryCode ?? "").trim();
+  const storedCity = String(learningProfile.birthCity ?? "").trim();
+
+  if (storedCountryCode || storedCity) {
+    return {
+      birthCountryCode: storedCountryCode,
+      birthCity: storedCity,
+    };
+  }
+
+  const birthPlace = String(learningProfile.birthPlace ?? "").trim();
+  if (!birthPlace) {
+    return { birthCountryCode: "", birthCity: "" };
+  }
+
+  const parts = birthPlace
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const [cityPart, ...countryParts] = parts;
+  const country = findBirthCountryByText(countryParts.join(" "));
+
+  return {
+    birthCountryCode: country?.code ?? "",
+    birthCity: cityPart ? toLocationTitle(cityPart) : "",
+  };
+}
+
+function updateBirthLocationDraft(draft: LearningProfileDraft, patch: Partial<Pick<LearningProfileDraft, "birthCountryCode" | "birthCity">>, locale: Locale) {
+  const next = { ...draft, ...patch };
+
+  return {
+    ...next,
+    birthPlace: formatBirthPlace(next.birthCity, next.birthCountryCode, locale),
   };
 }
 
@@ -239,6 +353,8 @@ export function MentoraApp() {
     practiceStyle: "",
     birthDate: "",
     birthPlace: "",
+    birthCountryCode: "",
+    birthCity: "",
     birthTime: "",
   });
   const [spaces, setSpaces] = useState<StudySpace[]>([]);
@@ -320,6 +436,7 @@ export function MentoraApp() {
 
     const loadedProfile = profileRow as Profile;
     const learningProfile = loadedProfile.learning_profile ?? {};
+    const birthLocation = parseBirthLocation(learningProfile);
     const loadedSpaces = (spaceRows ?? []) as StudySpace[];
     const nextActiveSpaceId = activeSpaceId ?? loadedSpaces[0]?.id ?? null;
     let loadedMessages: ChatMessage[] = [];
@@ -365,7 +482,9 @@ export function MentoraApp() {
       focusSupport: String(learningProfile.focusSupport ?? ""),
       practiceStyle: String(learningProfile.practiceStyle ?? ""),
       birthDate: String(learningProfile.birthDate ?? ""),
-      birthPlace: String(learningProfile.birthPlace ?? ""),
+      birthCountryCode: birthLocation.birthCountryCode,
+      birthCity: birthLocation.birthCity,
+      birthPlace: formatBirthPlace(birthLocation.birthCity, birthLocation.birthCountryCode, locale) || String(learningProfile.birthPlace ?? ""),
       birthTime: String(learningProfile.birthTime ?? ""),
     });
     setSpaces(loadedSpaces);
@@ -399,7 +518,7 @@ export function MentoraApp() {
     if (!activeSpaceId && nextActiveSpaceId) {
       setActiveSpaceId(nextActiveSpaceId);
     }
-  }, [activeSpaceId, supabase, t]);
+  }, [activeSpaceId, locale, supabase, t]);
 
   useEffect(() => {
     if (!supabase) {
@@ -728,6 +847,7 @@ export function MentoraApp() {
                     <ProfileStudio
                       busy={busy}
                       draft={profileDraft}
+                      locale={locale}
                       onChange={setProfileDraft}
                       onSave={saveProfile}
                       profile={profile}
@@ -766,13 +886,15 @@ export function MentoraApp() {
       return;
     }
 
-    if (activeView === "profile" && (!profileDraft.birthDate.trim() || !profileDraft.birthPlace.trim())) {
+    if (activeView === "profile" && (!profileDraft.birthDate.trim() || !profileDraft.birthCountryCode.trim() || !profileDraft.birthCity.trim())) {
       setError(t.profilePersonalIncomplete);
       return;
     }
 
     setBusy("profile");
     setError(null);
+    const birthCountry = getBirthCountryLabel(profileDraft.birthCountryCode, locale);
+    const birthPlace = formatBirthPlace(profileDraft.birthCity, profileDraft.birthCountryCode, locale);
     const { error: profileError } = await supabase
       .from("profiles")
       .update({
@@ -784,7 +906,10 @@ export function MentoraApp() {
           focusSupport: profileDraft.focusSupport,
           practiceStyle: profileDraft.practiceStyle,
           birthDate: profileDraft.birthDate,
-          birthPlace: profileDraft.birthPlace,
+          birthCountry,
+          birthCountryCode: profileDraft.birthCountryCode,
+          birthCity: profileDraft.birthCity,
+          birthPlace,
           birthTime: profileDraft.birthTime,
           onboardingComplete: true,
           updatedAt: new Date().toISOString(),
@@ -2833,6 +2958,7 @@ function ProfileOptionGroup({
 function ProfileStudio({
   busy,
   draft,
+  locale,
   onChange,
   onSave,
   profile,
@@ -2840,6 +2966,7 @@ function ProfileStudio({
 }: {
   busy: string | null;
   draft: LearningProfileDraft;
+  locale: Locale;
   onChange: (draft: LearningProfileDraft) => void;
   onSave: () => void;
   profile: Profile | null;
@@ -2847,7 +2974,11 @@ function ProfileStudio({
 }) {
   const options = learningProfileOptions(t);
   const complete = isLearningProfileComplete(draft);
-  const profileReady = complete && draft.birthDate.trim().length > 0 && draft.birthPlace.trim().length > 0;
+  const profileReady = complete && draft.birthDate.trim().length > 0 && draft.birthCountryCode.trim().length > 0 && draft.birthCity.trim().length > 0;
+  const countryOptions = getBirthCountryOptions(locale);
+  const selectedCountry = getBirthCountryOption(draft.birthCountryCode);
+  const cityOptions = selectedCountry?.cities ?? [];
+  const displayBirthPlace = formatBirthPlace(draft.birthCity, draft.birthCountryCode, locale) || draft.birthPlace || t.notSet;
   const [learningGoalOpen, setLearningGoalOpen] = useState(false);
 
   return (
@@ -2860,7 +2991,7 @@ function ProfileStudio({
         <p className="mt-2 break-words text-sm text-slate-300">{profile?.email}</p>
         <div className="mt-6 grid gap-3">
           <ProfileFact label={t.birthDate} value={draft.birthDate || t.notSet} />
-          <ProfileFact label={t.birthPlace} value={draft.birthPlace || t.notSet} />
+          <ProfileFact label={t.birthPlace} value={displayBirthPlace} />
           <ProfileFact label={t.learningGoal} value={draft.learningGoal || t.notSet} />
         </div>
       </section>
@@ -2904,7 +3035,28 @@ function ProfileStudio({
                     <div className="profile-personal-fields mt-3">
                       <TextField label={t.birthDate} value={draft.birthDate} onChange={(birthDate) => onChange({ ...draft, birthDate })} type="date" />
                       <TextField label={t.birthTime} value={draft.birthTime} onChange={(birthTime) => onChange({ ...draft, birthTime })} type="time" />
-                      <TextField label={t.birthPlace} value={draft.birthPlace} onChange={(birthPlace) => onChange({ ...draft, birthPlace })} placeholder={t.birthPlacePlaceholder} />
+                      <SelectInputField
+                        label={t.birthCountry}
+                        options={countryOptions}
+                        value={draft.birthCountryCode}
+                        onChange={(birthCountryCode) => onChange(updateBirthLocationDraft(draft, { birthCountryCode, birthCity: "" }, locale))}
+                        placeholder={t.birthCountryPlaceholder}
+                      />
+                      <TextField
+                        autoComplete="address-level2"
+                        disabled={!draft.birthCountryCode}
+                        label={t.birthCity}
+                        list="birth-city-options"
+                        value={draft.birthCity}
+                        onChange={(birthCity) => onChange(updateBirthLocationDraft(draft, { birthCity }, locale))}
+                        placeholder={draft.birthCountryCode ? t.birthCityPlaceholder : t.birthCityCountryFirst}
+                        spellCheck={false}
+                      />
+                      <datalist id="birth-city-options">
+                        {cityOptions.map((city) => (
+                          <option key={city} value={city} />
+                        ))}
+                      </datalist>
                     </div>
                   </div>
 
