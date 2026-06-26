@@ -3187,9 +3187,14 @@ function ProfileStudio({
                 ))}
               </datalist>
             </div>
-            <button className="primary-button h-12 justify-center" disabled={busy === "profile" || !profileReady} onClick={onSaveProfile} type="button">
+            <button
+              className="profile-save-button"
+              disabled={busy === "profile" || !profileReady}
+              onClick={onSaveProfile}
+              type="button"
+            >
               {busy === "profile" ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
-              {t.saveStudentData}
+              <span>{t.saveStudentData}</span>
             </button>
           </section>
 

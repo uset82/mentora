@@ -7977,6 +7977,51 @@ button:active:not(:disabled),
   margin-top: 14px;
 }
 
+.profile-save-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  width: 100%;
+  margin-top: 16px;
+  padding: 0.85rem 1.25rem;
+  border: 1px solid rgba(79, 70, 229, 0.35);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #4f46e5 0%, #2563eb 52%, #06b6d4 100%);
+  background-size: 160% 160%;
+  background-position: 0% 50%;
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: 0 14px 30px rgba(79, 70, 229, 0.28);
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-position 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
+}
+
+.profile-save-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background-position: 100% 50%;
+  box-shadow: 0 18px 40px rgba(37, 99, 235, 0.38);
+}
+
+.profile-save-button:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 10px 22px rgba(79, 70, 229, 0.24);
+}
+
+.profile-save-button:focus-visible {
+  outline: 2px solid #06b6d4;
+  outline-offset: 3px;
+}
+
+.profile-save-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 .profile-section-heading {
   display: flex;
   align-items: flex-start;
