@@ -16,6 +16,9 @@ export type LearningProfile = {
   explanationStyle?: string;
   focusSupport?: string;
   practiceStyle?: string;
+  birthDate?: string;
+  birthPlace?: string;
+  birthTime?: string;
   onboardingComplete?: boolean;
   updatedAt?: string;
 };

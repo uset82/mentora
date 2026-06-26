@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   BookOpen,
   BrainCircuit,
+  CalendarDays,
   CheckCircle2,
   ChevronRight,
   ClipboardList,
@@ -66,17 +67,21 @@ type ModelOption = {
   pricingLabel: string;
 };
 
-type LearningProfileDraft = Required<
-  Pick<
-    LearningProfile,
-    "learningGoal" | "sessionLength" | "studyPreference" | "explanationStyle" | "focusSupport" | "practiceStyle"
-  >
->;
+const learningProfileKeys = [
+  "learningGoal",
+  "sessionLength",
+  "studyPreference",
+  "explanationStyle",
+  "focusSupport",
+  "practiceStyle",
+] as const;
 
-type LearningProfileOptionKey = keyof LearningProfileDraft;
+type LearningProfileOptionKey = (typeof learningProfileKeys)[number];
+type PersonalProfileKey = "birthDate" | "birthPlace" | "birthTime";
+type LearningProfileDraft = Required<Pick<LearningProfile, LearningProfileOptionKey | PersonalProfileKey>>;
 
 function isLearningProfileComplete(draft: LearningProfileDraft) {
-  return Object.values(draft).every((value) => value.trim().length > 0);
+  return learningProfileKeys.every((key) => draft[key].trim().length > 0);
 }
 
 function learningProfileOptions(t: Record<string, string>): Record<LearningProfileOptionKey, string[]> {
@@ -233,6 +238,9 @@ export function MentoraApp() {
     explanationStyle: "",
     focusSupport: "",
     practiceStyle: "",
+    birthDate: "",
+    birthPlace: "",
+    birthTime: "",
   });
   const [spaces, setSpaces] = useState<StudySpace[]>([]);
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
@@ -357,6 +365,9 @@ export function MentoraApp() {
       explanationStyle: String(learningProfile.explanationStyle ?? ""),
       focusSupport: String(learningProfile.focusSupport ?? ""),
       practiceStyle: String(learningProfile.practiceStyle ?? ""),
+      birthDate: String(learningProfile.birthDate ?? ""),
+      birthPlace: String(learningProfile.birthPlace ?? ""),
+      birthTime: String(learningProfile.birthTime ?? ""),
     });
     setSpaces(loadedSpaces);
 
@@ -597,50 +608,54 @@ export function MentoraApp() {
         />
 
         <section className="liquid-main-scroll">
-          <header className="liquid-command-bar" aria-label="Workspace command bar">
-            <div className="liquid-command-context">
-              <span>{activeSpace?.name ?? t.dashboard}</span>
-              <strong>{activeView === "home" ? t.dashboard : t[`${activeView}Title`]}</strong>
-            </div>
-            <div className="liquid-command-actions">
-              <LiquidButton className="liquid-start-button" onClick={() => setActiveView("tutor")}>
-                <Sparkles size={17} />
-                <span>{t.startStudy}</span>
-              </LiquidButton>
-              <button className="liquid-icon-button" aria-label={t.switchLanguage} onClick={() => setLocale(locale === "es" ? "en" : "es")} type="button">
-                <Globe2 size={18} />
-                <span>{locale.toUpperCase()}</span>
-              </button>
-              <button className="liquid-icon-button" aria-label="Help" type="button">
-                <HelpCircle size={18} />
-              </button>
-              <button className="liquid-icon-button" onClick={() => supabase.auth.signOut()} type="button">
-                <LogOut size={18} />
-                <span className="liquid-signout-label">{t.signOut}</span>
-              </button>
-            </div>
-          </header>
+          {activeView !== "profile" && (
+            <header className="liquid-command-bar" aria-label="Workspace command bar">
+              <div className="liquid-command-context">
+                <span>{activeSpace?.name ?? t.dashboard}</span>
+                <strong>{activeView === "home" ? t.dashboard : t[`${activeView}Title`]}</strong>
+              </div>
+              <div className="liquid-command-actions">
+                <LiquidButton className="liquid-start-button" onClick={() => setActiveView("tutor")}>
+                  <Sparkles size={17} />
+                  <span>{t.startStudy}</span>
+                </LiquidButton>
+                <button className="liquid-icon-button" aria-label={t.switchLanguage} onClick={() => setLocale(locale === "es" ? "en" : "es")} type="button">
+                  <Globe2 size={18} />
+                  <span>{locale.toUpperCase()}</span>
+                </button>
+                <button className="liquid-icon-button" aria-label="Help" type="button">
+                  <HelpCircle size={18} />
+                </button>
+                <button className="liquid-icon-button" onClick={() => supabase.auth.signOut()} type="button">
+                  <LogOut size={18} />
+                  <span className="liquid-signout-label">{t.signOut}</span>
+                </button>
+              </div>
+            </header>
+          )}
 
           <section className="liquid-content-panel">
-            <WorkspaceHeader
-              activeSpace={activeSpace}
-              activeView={activeView}
-              artifacts={activeArtifacts}
-              documents={activeDocuments}
-              failedDocuments={failedDocuments}
-              loading={workspaceLoading}
-              models={models}
-              openRouterConnected={openRouterConnected}
-              openRouterServerConnected={openRouterServerConnected}
-              onSelectModel={handleModelSelect}
-              onUpload={uploadDocument}
-              processingDocuments={processingDocuments}
-              readyDocuments={readyDocuments}
-              readiness={readiness}
-              selectedModel={selectedModel}
-              uploadBusy={busy === "upload"}
-              t={t}
-            />
+            {activeView !== "profile" && (
+              <WorkspaceHeader
+                activeSpace={activeSpace}
+                activeView={activeView}
+                artifacts={activeArtifacts}
+                documents={activeDocuments}
+                failedDocuments={failedDocuments}
+                loading={workspaceLoading}
+                models={models}
+                openRouterConnected={openRouterConnected}
+                openRouterServerConnected={openRouterServerConnected}
+                onSelectModel={handleModelSelect}
+                onUpload={uploadDocument}
+                processingDocuments={processingDocuments}
+                readyDocuments={readyDocuments}
+                readiness={readiness}
+                selectedModel={selectedModel}
+                uploadBusy={busy === "upload"}
+                t={t}
+              />
+            )}
 
             <div className="min-h-0 flex-1 overflow-visible px-3 pb-5 sm:px-5 sm:pb-6">
               <AnimatePresence mode="wait">
@@ -752,6 +767,11 @@ export function MentoraApp() {
       return;
     }
 
+    if (activeView === "profile" && (!profileDraft.birthDate.trim() || !profileDraft.birthPlace.trim())) {
+      setError(t.profilePersonalIncomplete);
+      return;
+    }
+
     setBusy("profile");
     setError(null);
     const { error: profileError } = await supabase
@@ -764,6 +784,9 @@ export function MentoraApp() {
           explanationStyle: profileDraft.explanationStyle,
           focusSupport: profileDraft.focusSupport,
           practiceStyle: profileDraft.practiceStyle,
+          birthDate: profileDraft.birthDate,
+          birthPlace: profileDraft.birthPlace,
+          birthTime: profileDraft.birthTime,
           onboardingComplete: true,
           updatedAt: new Date().toISOString(),
         },
@@ -1796,14 +1819,14 @@ function NavigationRail({
   spaces: StudySpace[];
   t: Record<string, string>;
 }) {
-  const navItems: Array<{ id: AppView; label: string; detail: string }> = [
+  const navItems: Array<{ id: Exclude<AppView, "profile">; label: string; detail: string }> = [
     { id: "home", label: t.home, detail: t.homeNav },
     { id: "documents", label: t.myMaterials, detail: `${documents.length} ${t.sources}` },
     { id: "tutor", label: t.aiTutor, detail: t.tutorNav },
     { id: "tools", label: t.studyTools, detail: t.toolsNav },
-    { id: "profile", label: t.settings, detail: profile?.role ?? t.student },
   ];
   const initials = (profile?.full_name ?? profile?.email ?? "M").slice(0, 2).toUpperCase();
+  const isProfileActive = activeView === "profile";
 
   return (
     <aside className="liquid-nav" aria-label="Student navigation">
@@ -1812,7 +1835,13 @@ function NavigationRail({
           <MentoraLogo onClick={() => onSignOut()} />
         </div>
 
-        <button className="liquid-profile-chip" onClick={() => onSelectView("profile")} type="button">
+        <button
+          aria-current={isProfileActive ? "page" : undefined}
+          className={`liquid-profile-chip ${isProfileActive ? "is-active" : ""}`}
+          onClick={() => onSelectView("profile")}
+          title={`${t.settings} - ${profile?.full_name ?? profile?.email ?? t.student}`}
+          type="button"
+        >
           <span className="liquid-avatar">{initials}</span>
           <span className="liquid-profile-copy">
             <strong>{profile?.full_name ?? profile?.email ?? t.student}</strong>
@@ -2539,8 +2568,8 @@ function LearningProfileOnboarding({
 }) {
   const options = learningProfileOptions(t);
   const complete = isLearningProfileComplete(draft);
-  const selectedCount = Object.values(draft).filter((value) => value.trim().length > 0).length;
-  const progress = Math.round((selectedCount / 6) * 100);
+  const selectedCount = learningProfileKeys.filter((key) => draft[key].trim().length > 0).length;
+  const progress = Math.round((selectedCount / learningProfileKeys.length) * 100);
   const setupLabels =
     locale === "es"
       ? ["Crear cuenta", "Tu perfil", "Como te gusta aprender", "Configura tu carrera", "Listo"]
@@ -2819,6 +2848,9 @@ function ProfileStudio({
 }) {
   const options = learningProfileOptions(t);
   const complete = isLearningProfileComplete(draft);
+  const profileReady = complete && draft.birthDate.trim().length > 0 && draft.birthPlace.trim().length > 0;
+  const developmentRows = buildDevelopmentRows(draft, t);
+  const [learningGoalOpen, setLearningGoalOpen] = useState(false);
 
   return (
     <div className="miro-studio-grid h-full min-h-[560px] gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
@@ -2829,10 +2861,9 @@ function ProfileStudio({
         <h2 className="mt-5 text-2xl font-semibold text-white">{profile?.full_name ?? t.student}</h2>
         <p className="mt-2 break-words text-sm text-slate-300">{profile?.email}</p>
         <div className="mt-6 grid gap-3">
-          <ProfileFact label={t.role} value={profile?.role ?? t.student} />
+          <ProfileFact label={t.birthDate} value={draft.birthDate || t.notSet} />
+          <ProfileFact label={t.birthPlace} value={draft.birthPlace || t.notSet} />
           <ProfileFact label={t.learningGoal} value={draft.learningGoal || t.notSet} />
-          <ProfileFact label={t.sessionLength} value={draft.sessionLength || t.notSet} />
-          <ProfileFact label={t.explanationStyle} value={draft.explanationStyle || t.notSet} />
         </div>
       </section>
 
@@ -2841,62 +2872,208 @@ function ProfileStudio({
           <h2 className="text-lg font-semibold text-white">{t.profileTuning}</h2>
           <p className="mt-1 text-sm leading-6 text-slate-400">{t.profileTuningText}</p>
         </div>
-        <div className="grid gap-4">
-          <SelectField
-            label={t.learningGoal}
-            options={options.learningGoal}
-            value={draft.learningGoal}
-            onChange={(learningGoal) => onChange({ ...draft, learningGoal })}
-            placeholder={t.learningGoalPlaceholder}
-          />
-          <SelectField
-            label={t.sessionLength}
-            options={options.sessionLength}
-            value={draft.sessionLength}
-            onChange={(sessionLength) => onChange({ ...draft, sessionLength })}
-            placeholder={t.sessionLengthPlaceholder}
-          />
-          <SelectField
-            label={t.studyPreference}
-            options={options.studyPreference}
-            value={draft.studyPreference}
-            onChange={(studyPreference) => onChange({ ...draft, studyPreference })}
-            placeholder={t.studyPreferencePlaceholder}
-          />
-          <SelectField
-            label={t.explanationStyle}
-            options={options.explanationStyle}
-            value={draft.explanationStyle}
-            onChange={(explanationStyle) => onChange({ ...draft, explanationStyle })}
-            placeholder={t.explanationStylePlaceholder}
-          />
-          <SelectField
-            label={t.focusSupport}
-            options={options.focusSupport}
-            value={draft.focusSupport}
-            onChange={(focusSupport) => onChange({ ...draft, focusSupport })}
-            placeholder={t.focusSupportPlaceholder}
-          />
-          <SelectField
-            label={t.practiceStyle}
-            options={options.practiceStyle}
-            value={draft.practiceStyle}
-            onChange={(practiceStyle) => onChange({ ...draft, practiceStyle })}
-            placeholder={t.practiceStylePlaceholder}
-          />
+
+        <section className={`profile-learning-accordion ${learningGoalOpen ? "is-open" : ""}`}>
           <button
-            className="primary-button h-12 justify-center"
-            disabled={busy === "profile" || !complete}
-            onClick={onSave}
+            aria-expanded={learningGoalOpen}
+            className="profile-learning-trigger"
+            onClick={() => setLearningGoalOpen((current) => !current)}
             type="button"
           >
-            {busy === "profile" ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
-            {t.saveProfile}
+            <span className="profile-select-icon">
+              <GraduationCap size={15} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <strong>{t.learningGoal}</strong>
+              <small>{draft.learningGoal || t.learningGoalPlaceholder}</small>
+            </span>
+            <ChevronRight size={16} />
           </button>
-        </div>
+
+          <AnimatePresence initial={false}>
+            {learningGoalOpen && (
+              <motion.div
+                animate={{ height: "auto", opacity: 1 }}
+                className="profile-learning-content"
+                exit={{ height: 0, opacity: 0 }}
+                initial={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+              >
+                <div className="profile-learning-inner">
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                    <h3 className="text-sm font-semibold text-white">{t.personalContext}</h3>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">{t.personalContextText}</p>
+                    <div className="profile-personal-fields mt-3">
+                      <TextField label={t.birthDate} value={draft.birthDate} onChange={(birthDate) => onChange({ ...draft, birthDate })} type="date" />
+                      <TextField label={t.birthTime} value={draft.birthTime} onChange={(birthTime) => onChange({ ...draft, birthTime })} type="time" />
+                      <TextField label={t.birthPlace} value={draft.birthPlace} onChange={(birthPlace) => onChange({ ...draft, birthPlace })} placeholder={t.birthPlacePlaceholder} />
+                    </div>
+                  </div>
+
+                  <SelectField
+                    icon={<GraduationCap size={15} />}
+                    label={t.learningGoal}
+                    options={options.learningGoal}
+                    value={draft.learningGoal}
+                    onChange={(learningGoal) => onChange({ ...draft, learningGoal })}
+                    placeholder={t.learningGoalPlaceholder}
+                  />
+                  <SelectField
+                    icon={<Clock3 size={15} />}
+                    label={t.sessionLength}
+                    options={options.sessionLength}
+                    value={draft.sessionLength}
+                    onChange={(sessionLength) => onChange({ ...draft, sessionLength })}
+                    placeholder={t.sessionLengthPlaceholder}
+                  />
+                  <SelectField
+                    icon={<BookOpen size={15} />}
+                    label={t.studyPreference}
+                    options={options.studyPreference}
+                    value={draft.studyPreference}
+                    onChange={(studyPreference) => onChange({ ...draft, studyPreference })}
+                    placeholder={t.studyPreferencePlaceholder}
+                  />
+                  <SelectField
+                    icon={<BrainCircuit size={15} />}
+                    label={t.explanationStyle}
+                    options={options.explanationStyle}
+                    value={draft.explanationStyle}
+                    onChange={(explanationStyle) => onChange({ ...draft, explanationStyle })}
+                    placeholder={t.explanationStylePlaceholder}
+                  />
+                  <SelectField
+                    icon={<Flame size={15} />}
+                    label={t.focusSupport}
+                    options={options.focusSupport}
+                    value={draft.focusSupport}
+                    onChange={(focusSupport) => onChange({ ...draft, focusSupport })}
+                    placeholder={t.focusSupportPlaceholder}
+                  />
+                  <SelectField
+                    icon={<ClipboardList size={15} />}
+                    label={t.practiceStyle}
+                    options={options.practiceStyle}
+                    value={draft.practiceStyle}
+                    onChange={(practiceStyle) => onChange({ ...draft, practiceStyle })}
+                    placeholder={t.practiceStylePlaceholder}
+                  />
+
+                  <div className="profile-guidance-panel">
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <h3>{t.academicDevelopmentMap}</h3>
+                        <p>{t.academicDevelopmentText}</p>
+                      </div>
+                      <CalendarDays size={18} />
+                    </div>
+                    <table className="profile-guidance-table">
+                      <thead>
+                        <tr>
+                          <th>{t.developmentArea}</th>
+                          <th>{t.developmentSignal}</th>
+                          <th>{t.developmentNextStep}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {developmentRows.map((row) => (
+                          <tr key={row.area}>
+                            <td>{row.area}</td>
+                            <td>{row.signal}</td>
+                            <td>{row.nextStep}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <button
+                    className="primary-button h-12 justify-center"
+                    disabled={busy === "profile" || !profileReady}
+                    onClick={onSave}
+                    type="button"
+                  >
+                    {busy === "profile" ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
+                    {t.saveProfile}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </section>
       </section>
     </div>
   );
+}
+
+function calculateAge(birthDate: string) {
+  if (!birthDate) {
+    return null;
+  }
+
+  const parsed = new Date(`${birthDate}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  const now = new Date();
+  if (parsed > now) {
+    return null;
+  }
+
+  let age = now.getFullYear() - parsed.getFullYear();
+  const monthDelta = now.getMonth() - parsed.getMonth();
+  const hasBirthdayPassed = monthDelta > 0 || (monthDelta === 0 && now.getDate() >= parsed.getDate());
+  if (!hasBirthdayPassed) {
+    age -= 1;
+  }
+
+  return age;
+}
+
+function buildDevelopmentRows(draft: LearningProfileDraft, t: Record<string, string>) {
+  const age = calculateAge(draft.birthDate);
+  const stage =
+    age === null
+      ? t.developmentStageUnknown
+      : age < 18
+      ? t.developmentStageFoundation
+      : age <= 22
+      ? t.developmentStageUniversity
+      : age <= 29
+      ? t.developmentStageBridge
+      : t.developmentStageContinuing;
+  const birthContext = [draft.birthPlace, draft.birthTime].filter((value) => value.trim().length > 0).join(" - ");
+  const rhythm = [draft.sessionLength, draft.focusSupport].filter((value) => value.trim().length > 0).join(" + ");
+  const practice = [draft.explanationStyle, draft.practiceStyle].filter((value) => value.trim().length > 0).join(" + ");
+
+  return [
+    {
+      area: t.developmentStage,
+      signal: age === null ? stage : `${age} - ${stage}`,
+      nextStep: t.developmentStageAction,
+    },
+    {
+      area: t.developmentContext,
+      signal: birthContext || t.notSet,
+      nextStep: t.developmentContextAction,
+    },
+    {
+      area: t.developmentAcademic,
+      signal: draft.learningGoal || t.notSet,
+      nextStep: t.developmentAcademicAction,
+    },
+    {
+      area: t.developmentWellbeing,
+      signal: rhythm || t.notSet,
+      nextStep: t.developmentWellbeingAction,
+    },
+    {
+      area: t.developmentPractice,
+      signal: practice || t.notSet,
+      nextStep: t.developmentPracticeAction,
+    },
+  ];
 }
 
 function InsightPanel({
@@ -2962,12 +3139,14 @@ function TextField({
   label,
   value,
   onChange,
+  placeholder,
   t,
   type = "text",
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  placeholder?: string;
   t?: Record<string, string>;
   type?: string;
 }) {
@@ -2983,6 +3162,7 @@ function TextField({
           className={`text-input h-12 ${isPassword ? "pr-12" : ""}`}
           type={inputType}
           value={value}
+          placeholder={placeholder}
           onChange={(event) => onChange(event.target.value)}
         />
         {isPassword && (
