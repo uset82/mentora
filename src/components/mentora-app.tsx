@@ -412,6 +412,14 @@ export function MentoraApp() {
       reportClientError("Workspace network request failed", caught);
       setWorkspaceLoading(false);
       setError(t.authNetworkError);
+      // A stale/invalid session often surfaces here. Force a clean re-auth.
+      try {
+        await client.auth.signOut();
+      } catch {
+        // ignore
+      }
+      setSession(null);
+      void autoSignInDev(client);
       return;
     }
 
@@ -550,16 +558,47 @@ export function MentoraApp() {
           await autoSignInDev(supabase);
           return;
         }
+        // Validate the cached session against the server. A stale refresh
+        // token passes getSession() but fails here, so we clear and re-sign-in.
+        const { error: userError } = await supabase.auth.getUser();
+        if (cancelled) {
+          return;
+        }
+        if (userError) {
+          reportClientError("Session validation failed", userError);
+          try {
+            await supabase.auth.signOut();
+          } catch {
+            // ignore
+          }
+          setSession(null);
+          await autoSignInDev(supabase);
+          return;
+        }
         setSession(data.session);
       })
-      .catch((caught) => {
+      .catch(async (caught) => {
         reportClientError("Session initialization failed", caught);
-        setError(t.authNetworkError);
+        try {
+          await supabase.auth.signOut();
+        } catch {
+          // ignore
+        }
         setSession(null);
-        void autoSignInDev(supabase);
+        await autoSignInDev(supabase);
       });
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === "SIGNED_OUT" || event === "TOKEN_REFRESHED") {
+        if (event === "SIGNED_OUT") {
+          setSession(null);
+          void autoSignInDev(supabase);
+          return;
+        }
+      }
       setSession(nextSession);
+      if (!nextSession) {
+        void autoSignInDev(supabase);
+      }
       if (event === "PASSWORD_RECOVERY") {
         setPasswordRecovery(true);
       }
