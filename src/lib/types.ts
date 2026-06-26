@@ -22,6 +22,7 @@ export type LearningProfile = {
   birthCountryCode?: string;
   birthCity?: string;
   birthTime?: string;
+  avatarUrl?: string;
   onboardingComplete?: boolean;
   updatedAt?: string;
 };

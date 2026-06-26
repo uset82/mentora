@@ -37,8 +37,8 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/browser";
 import { copy } from "@/lib/i18n";
@@ -76,7 +76,7 @@ const learningProfileKeys = [
 ] as const;
 
 type LearningProfileOptionKey = (typeof learningProfileKeys)[number];
-type PersonalProfileKey = "birthDate" | "birthPlace" | "birthCountryCode" | "birthCity" | "birthTime";
+type PersonalProfileKey = "birthDate" | "birthPlace" | "birthCountryCode" | "birthCity" | "birthTime" | "avatarUrl";
 type LearningProfileDraft = Required<Pick<LearningProfile, LearningProfileOptionKey | PersonalProfileKey>>;
 type BirthCountryOption = {
   code: string;
@@ -219,6 +219,42 @@ function updateBirthLocationDraft(draft: LearningProfileDraft, patch: Partial<Pi
 
 const toolKinds: ToolKind[] = ["quiz", "flashcards", "apa_summary"];
 const CHAT_TIMEOUT_MS = 75_000;
+const AVATAR_CANVAS_SIZE = 320;
+
+function readAvatarFile(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    if (!file.type.startsWith("image/")) {
+      reject(new Error("Invalid image file."));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read image file."));
+    reader.onload = () => {
+      const source = String(reader.result ?? "");
+      const image = new Image();
+      image.onerror = () => reject(new Error("Could not process image file."));
+      image.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = AVATAR_CANVAS_SIZE;
+        canvas.height = AVATAR_CANVAS_SIZE;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          reject(new Error("Could not process image file."));
+          return;
+        }
+
+        const cropSize = Math.min(image.width, image.height);
+        const sourceX = Math.max(0, (image.width - cropSize) / 2);
+        const sourceY = Math.max(0, (image.height - cropSize) / 2);
+        context.drawImage(image, sourceX, sourceY, cropSize, cropSize, 0, 0, AVATAR_CANVAS_SIZE, AVATAR_CANVAS_SIZE);
+        resolve(canvas.toDataURL("image/jpeg", 0.86));
+      };
+      image.src = source;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 const toolMeta: Record<ToolKind, { icon: ReactNode; tone: string }> = {
   quiz: { icon: <ClipboardList size={18} />, tone: "from-cyan-300/20 to-blue-400/10 text-cyan-100" },
@@ -315,10 +351,15 @@ async function getAccessToken(client: SupabaseClient) {
   }
 }
 
-async function autoSignInDev(client: SupabaseClient) {
+async function autoSignInDev(client: SupabaseClient, skipRef?: { current: boolean }) {
   const isDev = process.env.NODE_ENV !== "production";
   const enabled = process.env.NEXT_PUBLIC_MENTORA_DEV_AUTOLOGIN === "true";
   if (!isDev || !enabled) {
+    return;
+  }
+  if (skipRef?.current) {
+    // A user-initiated sign-out happened; don't bounce back into a session.
+    skipRef.current = false;
     return;
   }
   const email = process.env.NEXT_PUBLIC_MENTORA_DEV_EMAIL;
@@ -350,6 +391,7 @@ export function MentoraApp() {
   }, []);
   const supabase = supabaseSetup.client;
   const setupError = supabaseSetup.error;
+  const manualSignOutRef = useRef(false);
   const [session, setSession] = useState<Session | null>(null);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -365,6 +407,7 @@ export function MentoraApp() {
     birthCountryCode: "",
     birthCity: "",
     birthTime: "",
+    avatarUrl: "",
   });
   const [spaces, setSpaces] = useState<StudySpace[]>([]);
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
@@ -385,6 +428,12 @@ export function MentoraApp() {
   const [openRouterServerConnected, setOpenRouterServerConnected] = useState(false);
   const [openRouterConnectionError, setOpenRouterConnectionError] = useState<string | null>(null);
   const t = copy[locale];
+
+  const handleManualSignOut = useCallback(() => {
+    manualSignOutRef.current = true;
+    void supabase?.auth.signOut();
+    setSession(null);
+  }, [supabase]);
 
   const loadWorkspace = useCallback(async (client = supabase) => {
     if (!client) {
@@ -419,7 +468,7 @@ export function MentoraApp() {
         // ignore
       }
       setSession(null);
-      void autoSignInDev(client);
+      void autoSignInDev(client, manualSignOutRef);
       return;
     }
 
@@ -503,6 +552,7 @@ export function MentoraApp() {
       birthCity: birthLocation.birthCity,
       birthPlace: formatBirthPlace(birthLocation.birthCity, birthLocation.birthCountryCode, locale) || String(learningProfile.birthPlace ?? ""),
       birthTime: String(learningProfile.birthTime ?? ""),
+      avatarUrl: String(learningProfile.avatarUrl ?? ""),
     });
     setSpaces(loadedSpaces);
 
@@ -555,7 +605,7 @@ export function MentoraApp() {
             void supabase.auth.signOut();
           }
           setSession(null);
-          await autoSignInDev(supabase);
+          await autoSignInDev(supabase, manualSignOutRef);
           return;
         }
         // Validate the cached session against the server. A stale refresh
@@ -572,7 +622,7 @@ export function MentoraApp() {
             // ignore
           }
           setSession(null);
-          await autoSignInDev(supabase);
+          await autoSignInDev(supabase, manualSignOutRef);
           return;
         }
         setSession(data.session);
@@ -585,19 +635,19 @@ export function MentoraApp() {
           // ignore
         }
         setSession(null);
-        await autoSignInDev(supabase);
+        await autoSignInDev(supabase, manualSignOutRef);
       });
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (event === "SIGNED_OUT" || event === "TOKEN_REFRESHED") {
         if (event === "SIGNED_OUT") {
           setSession(null);
-          void autoSignInDev(supabase);
+          void autoSignInDev(supabase, manualSignOutRef);
           return;
         }
       }
       setSession(nextSession);
       if (!nextSession) {
-        void autoSignInDev(supabase);
+        void autoSignInDev(supabase, manualSignOutRef);
       }
       if (event === "PASSWORD_RECOVERY") {
         setPasswordRecovery(true);
@@ -715,7 +765,7 @@ export function MentoraApp() {
             locale={locale}
             onChange={setProfileDraft}
             onSave={saveProfile}
-            onSignOut={() => supabase.auth.signOut()}
+            onSignOut={handleManualSignOut}
             setLocale={setLocale}
             t={t}
             userEmail={profile?.email ?? session.user.email ?? ""}
@@ -767,7 +817,7 @@ export function MentoraApp() {
           onCreate={(name) => createStudySpace(name)}
           onSelectSpace={setActiveSpaceId}
           onSelectView={setActiveView}
-          onSignOut={() => supabase.auth.signOut()}
+          onSignOut={handleManualSignOut}
           profile={profile}
           spaces={spaces}
           t={t}
@@ -792,7 +842,7 @@ export function MentoraApp() {
                 <button className="liquid-icon-button" aria-label="Help" type="button">
                   <HelpCircle size={18} />
                 </button>
-                <button className="liquid-icon-button" onClick={() => supabase.auth.signOut()} type="button">
+                <button className="liquid-icon-button" onClick={handleManualSignOut} type="button">
                   <LogOut size={18} />
                   <span className="liquid-signout-label">{t.signOut}</span>
                 </button>
@@ -897,7 +947,9 @@ export function MentoraApp() {
                       draft={profileDraft}
                       locale={locale}
                       onChange={setProfileDraft}
-                      onSave={saveProfile}
+                      onError={setError}
+                      onSaveLearning={() => saveProfile({ requireLearning: true, requirePersonal: false })}
+                      onSaveProfile={() => saveProfile({ requireLearning: false, requirePersonal: true })}
                       profile={profile}
                       t={t}
                     />
@@ -924,17 +976,20 @@ export function MentoraApp() {
     </main>
   );
 
-  async function saveProfile() {
+  async function saveProfile(options: { requireLearning?: boolean; requirePersonal?: boolean } = {}) {
     if (!supabase || !session) {
       return;
     }
 
-    if (!isLearningProfileComplete(profileDraft)) {
+    const requireLearning = options.requireLearning ?? activeView !== "profile";
+    const requirePersonal = options.requirePersonal ?? activeView === "profile";
+
+    if (requireLearning && !isLearningProfileComplete(profileDraft)) {
       setError(t.profileIncomplete);
       return;
     }
 
-    if (activeView === "profile" && (!profileDraft.birthDate.trim() || !profileDraft.birthCountryCode.trim() || !profileDraft.birthCity.trim())) {
+    if (requirePersonal && (!profileDraft.birthDate.trim() || !profileDraft.birthCountryCode.trim() || !profileDraft.birthCity.trim())) {
       setError(t.profilePersonalIncomplete);
       return;
     }
@@ -959,7 +1014,8 @@ export function MentoraApp() {
           birthCity: profileDraft.birthCity,
           birthPlace,
           birthTime: profileDraft.birthTime,
-          onboardingComplete: true,
+          avatarUrl: profileDraft.avatarUrl,
+          onboardingComplete: isLearningProfileComplete(profileDraft) || Boolean(profile?.learning_profile?.onboardingComplete),
           updatedAt: new Date().toISOString(),
         },
       })
@@ -3008,7 +3064,9 @@ function ProfileStudio({
   draft,
   locale,
   onChange,
-  onSave,
+  onError,
+  onSaveLearning,
+  onSaveProfile,
   profile,
   t,
 }: {
@@ -3016,161 +3074,213 @@ function ProfileStudio({
   draft: LearningProfileDraft;
   locale: Locale;
   onChange: (draft: LearningProfileDraft) => void;
-  onSave: () => void;
+  onError: (message: string | null) => void;
+  onSaveLearning: () => void;
+  onSaveProfile: () => void;
   profile: Profile | null;
   t: Record<string, string>;
 }) {
   const options = learningProfileOptions(t);
-  const complete = isLearningProfileComplete(draft);
-  const profileReady = complete && draft.birthDate.trim().length > 0 && draft.birthCountryCode.trim().length > 0 && draft.birthCity.trim().length > 0;
+  const learningReady = isLearningProfileComplete(draft);
+  const profileReady = draft.birthDate.trim().length > 0 && draft.birthCountryCode.trim().length > 0 && draft.birthCity.trim().length > 0;
   const countryOptions = getBirthCountryOptions(locale);
   const selectedCountry = getBirthCountryOption(draft.birthCountryCode);
   const cityOptions = selectedCountry?.cities ?? [];
   const displayBirthPlace = formatBirthPlace(draft.birthCity, draft.birthCountryCode, locale) || draft.birthPlace || t.notSet;
   const [learningGoalOpen, setLearningGoalOpen] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+
+  async function handleAvatarUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+
+    setAvatarBusy(true);
+    try {
+      const avatarUrl = await readAvatarFile(file);
+      onChange({ ...draft, avatarUrl });
+      onError(null);
+    } catch (caught) {
+      reportClientError("Avatar upload failed", caught);
+      onError(t.avatarUploadError);
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
 
   return (
     <div className="miro-studio-grid h-full min-h-[560px] gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
       <section className="profile-hero-card rounded-3xl border border-white/10 bg-gradient-to-br from-white/[0.08] to-cyan-300/[0.04] p-5">
-        <div className="brand-mark h-14 w-14">
-          <UserRound size={24} />
+        <div className="profile-avatar-stack">
+          <div className="profile-avatar-frame" aria-label={t.avatar}>
+            {draft.avatarUrl ? (
+              <span aria-hidden className="profile-avatar-image" style={{ backgroundImage: `url(${draft.avatarUrl})` }} />
+            ) : (
+              <UserRound size={30} />
+            )}
+          </div>
+          <input className="sr-only" id="profile-avatar-upload" accept="image/*" type="file" onChange={handleAvatarUpload} />
+          <div className="profile-avatar-actions">
+            <label className="profile-avatar-upload" htmlFor="profile-avatar-upload">
+              {avatarBusy ? <Loader2 className="animate-spin" size={15} /> : <Upload size={15} />}
+              {draft.avatarUrl ? t.changeAvatar : t.uploadAvatar}
+            </label>
+            {draft.avatarUrl && (
+              <button className="profile-avatar-remove" onClick={() => onChange({ ...draft, avatarUrl: "" })} type="button">
+                <X size={14} />
+                {t.removeAvatar}
+              </button>
+            )}
+          </div>
         </div>
         <h2 className="mt-5 text-2xl font-semibold text-white">{profile?.full_name ?? t.student}</h2>
         <p className="mt-2 break-words text-sm text-slate-300">{profile?.email}</p>
         <div className="mt-6 grid gap-3">
           <ProfileFact label={t.birthDate} value={draft.birthDate || t.notSet} />
           <ProfileFact label={t.birthPlace} value={displayBirthPlace} />
-          <ProfileFact label={t.learningGoal} value={draft.learningGoal || t.notSet} />
+          <ProfileFact label={t.role} value={profile?.role ?? t.student} />
         </div>
       </section>
 
       <section className="profile-settings-card rounded-3xl border border-white/10 bg-slate-950/55 p-4 sm:p-5">
         <div className="mb-5">
-          <h2 className="text-lg font-semibold text-white">{t.profileTuning}</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-400">{t.profileTuningText}</p>
+          <h2 className="text-lg font-semibold text-white">{t.profileSettings}</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-400">{t.profileSettingsText}</p>
         </div>
 
-        <section className={`profile-learning-accordion ${learningGoalOpen ? "is-open" : ""}`}>
-          <button
-            aria-expanded={learningGoalOpen}
-            className="profile-learning-trigger"
-            onClick={() => setLearningGoalOpen((current) => !current)}
-            type="button"
-          >
-            <span className="profile-select-icon">
-              <GraduationCap size={15} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <strong>{t.learningGoal}</strong>
-              <small>{draft.learningGoal || t.learningGoalPlaceholder}</small>
-            </span>
-            <ChevronRight size={16} />
-          </button>
+        <div className="profile-settings-stack">
+          <section className="profile-section-card">
+            <div className="profile-section-heading">
+              <span className="profile-section-icon">
+                <UserRound size={16} />
+              </span>
+              <span>
+                <h3>{t.personalContext}</h3>
+                <p>{t.personalContextText}</p>
+              </span>
+            </div>
+            <div className="profile-personal-fields mt-4">
+              <TextField label={t.birthDate} value={draft.birthDate} onChange={(birthDate) => onChange({ ...draft, birthDate })} type="date" />
+              <TextField label={t.birthTime} value={draft.birthTime} onChange={(birthTime) => onChange({ ...draft, birthTime })} type="time" />
+              <SelectInputField
+                label={t.birthCountry}
+                options={countryOptions}
+                value={draft.birthCountryCode}
+                onChange={(birthCountryCode) => onChange(updateBirthLocationDraft(draft, { birthCountryCode, birthCity: "" }, locale))}
+                placeholder={t.birthCountryPlaceholder}
+              />
+              <TextField
+                autoComplete="address-level2"
+                disabled={!draft.birthCountryCode}
+                label={t.birthCity}
+                list="birth-city-options"
+                value={draft.birthCity}
+                onChange={(birthCity) => onChange(updateBirthLocationDraft(draft, { birthCity }, locale))}
+                placeholder={draft.birthCountryCode ? t.birthCityPlaceholder : t.birthCityCountryFirst}
+                spellCheck={false}
+              />
+              <datalist id="birth-city-options">
+                {cityOptions.map((city) => (
+                  <option key={city} value={city} />
+                ))}
+              </datalist>
+            </div>
+            <button className="primary-button h-12 justify-center" disabled={busy === "profile" || !profileReady} onClick={onSaveProfile} type="button">
+              {busy === "profile" ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
+              {t.saveStudentData}
+            </button>
+          </section>
 
-          <AnimatePresence initial={false}>
-            {learningGoalOpen && (
-              <motion.div
-                animate={{ height: "auto", opacity: 1 }}
-                className="profile-learning-content"
-                exit={{ height: 0, opacity: 0 }}
-                initial={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
-              >
-                <div className="profile-learning-inner">
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
-                    <h3 className="text-sm font-semibold text-white">{t.personalContext}</h3>
-                    <p className="mt-1 text-xs leading-5 text-slate-400">{t.personalContextText}</p>
-                    <div className="profile-personal-fields mt-3">
-                      <TextField label={t.birthDate} value={draft.birthDate} onChange={(birthDate) => onChange({ ...draft, birthDate })} type="date" />
-                      <TextField label={t.birthTime} value={draft.birthTime} onChange={(birthTime) => onChange({ ...draft, birthTime })} type="time" />
-                      <SelectInputField
-                        label={t.birthCountry}
-                        options={countryOptions}
-                        value={draft.birthCountryCode}
-                        onChange={(birthCountryCode) => onChange(updateBirthLocationDraft(draft, { birthCountryCode, birthCity: "" }, locale))}
-                        placeholder={t.birthCountryPlaceholder}
+          <section className={`profile-section-card profile-learning-accordion ${learningGoalOpen ? "is-open" : ""}`}>
+            <button
+              aria-expanded={learningGoalOpen}
+              className="profile-learning-trigger"
+              onClick={() => setLearningGoalOpen((current) => !current)}
+              type="button"
+            >
+              <span className="profile-select-icon">
+                <GraduationCap size={15} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <strong>{t.learningGoal}</strong>
+                <small>{draft.learningGoal || t.learningGoalPlaceholder}</small>
+              </span>
+              <ChevronRight size={16} />
+            </button>
+
+            <AnimatePresence initial={false}>
+              {learningGoalOpen && (
+                <motion.div
+                  animate={{ height: "auto", opacity: 1 }}
+                  className="profile-learning-content"
+                  exit={{ height: 0, opacity: 0 }}
+                  initial={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                >
+                  <div className="profile-learning-inner">
+                    <div className="profile-learning-fields">
+                      <SelectField
+                        icon={<GraduationCap size={15} />}
+                        label={t.learningGoal}
+                        options={options.learningGoal}
+                        value={draft.learningGoal}
+                        onChange={(learningGoal) => onChange({ ...draft, learningGoal })}
+                        placeholder={t.learningGoalPlaceholder}
                       />
-                      <TextField
-                        autoComplete="address-level2"
-                        disabled={!draft.birthCountryCode}
-                        label={t.birthCity}
-                        list="birth-city-options"
-                        value={draft.birthCity}
-                        onChange={(birthCity) => onChange(updateBirthLocationDraft(draft, { birthCity }, locale))}
-                        placeholder={draft.birthCountryCode ? t.birthCityPlaceholder : t.birthCityCountryFirst}
-                        spellCheck={false}
+                      <SelectField
+                        icon={<Clock3 size={15} />}
+                        label={t.sessionLength}
+                        options={options.sessionLength}
+                        value={draft.sessionLength}
+                        onChange={(sessionLength) => onChange({ ...draft, sessionLength })}
+                        placeholder={t.sessionLengthPlaceholder}
                       />
-                      <datalist id="birth-city-options">
-                        {cityOptions.map((city) => (
-                          <option key={city} value={city} />
-                        ))}
-                      </datalist>
+                      <SelectField
+                        icon={<BookOpen size={15} />}
+                        label={t.studyPreference}
+                        options={options.studyPreference}
+                        value={draft.studyPreference}
+                        onChange={(studyPreference) => onChange({ ...draft, studyPreference })}
+                        placeholder={t.studyPreferencePlaceholder}
+                      />
+                      <SelectField
+                        icon={<BrainCircuit size={15} />}
+                        label={t.explanationStyle}
+                        options={options.explanationStyle}
+                        value={draft.explanationStyle}
+                        onChange={(explanationStyle) => onChange({ ...draft, explanationStyle })}
+                        placeholder={t.explanationStylePlaceholder}
+                      />
+                      <SelectField
+                        icon={<Flame size={15} />}
+                        label={t.focusSupport}
+                        options={options.focusSupport}
+                        value={draft.focusSupport}
+                        onChange={(focusSupport) => onChange({ ...draft, focusSupport })}
+                        placeholder={t.focusSupportPlaceholder}
+                      />
+                      <SelectField
+                        icon={<ClipboardList size={15} />}
+                        label={t.practiceStyle}
+                        options={options.practiceStyle}
+                        value={draft.practiceStyle}
+                        onChange={(practiceStyle) => onChange({ ...draft, practiceStyle })}
+                        placeholder={t.practiceStylePlaceholder}
+                      />
                     </div>
+
+                    <button className="primary-button h-12 justify-center" disabled={busy === "profile" || !learningReady} onClick={onSaveLearning} type="button">
+                      {busy === "profile" ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
+                      {t.saveLearningSettings}
+                    </button>
                   </div>
-
-                  <SelectField
-                    icon={<GraduationCap size={15} />}
-                    label={t.learningGoal}
-                    options={options.learningGoal}
-                    value={draft.learningGoal}
-                    onChange={(learningGoal) => onChange({ ...draft, learningGoal })}
-                    placeholder={t.learningGoalPlaceholder}
-                  />
-                  <SelectField
-                    icon={<Clock3 size={15} />}
-                    label={t.sessionLength}
-                    options={options.sessionLength}
-                    value={draft.sessionLength}
-                    onChange={(sessionLength) => onChange({ ...draft, sessionLength })}
-                    placeholder={t.sessionLengthPlaceholder}
-                  />
-                  <SelectField
-                    icon={<BookOpen size={15} />}
-                    label={t.studyPreference}
-                    options={options.studyPreference}
-                    value={draft.studyPreference}
-                    onChange={(studyPreference) => onChange({ ...draft, studyPreference })}
-                    placeholder={t.studyPreferencePlaceholder}
-                  />
-                  <SelectField
-                    icon={<BrainCircuit size={15} />}
-                    label={t.explanationStyle}
-                    options={options.explanationStyle}
-                    value={draft.explanationStyle}
-                    onChange={(explanationStyle) => onChange({ ...draft, explanationStyle })}
-                    placeholder={t.explanationStylePlaceholder}
-                  />
-                  <SelectField
-                    icon={<Flame size={15} />}
-                    label={t.focusSupport}
-                    options={options.focusSupport}
-                    value={draft.focusSupport}
-                    onChange={(focusSupport) => onChange({ ...draft, focusSupport })}
-                    placeholder={t.focusSupportPlaceholder}
-                  />
-                  <SelectField
-                    icon={<ClipboardList size={15} />}
-                    label={t.practiceStyle}
-                    options={options.practiceStyle}
-                    value={draft.practiceStyle}
-                    onChange={(practiceStyle) => onChange({ ...draft, practiceStyle })}
-                    placeholder={t.practiceStylePlaceholder}
-                  />
-
-                  <button
-                    className="primary-button h-12 justify-center"
-                    disabled={busy === "profile" || !profileReady}
-                    onClick={onSave}
-                    type="button"
-                  >
-                    {busy === "profile" ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
-                    {t.saveProfile}
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </section>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </section>
+        </div>
       </section>
     </div>
   );
