@@ -83,12 +83,12 @@ Interaction rule: the sidebar should be a map, not a second dashboard.
 - [x] Keep active state visually strong, but reduce the pill/card size so it does not dominate the rail.
 - [x] Remove repeated empty-space instructional copy from the sidebar.
 - [x] Show `Sin espacio` as a compact state, then put the real explanation in the main content area.
-- [ ] Check mobile/tablet behavior so the navigation does not become a long list of repeated CTAs.
+- [x] Check mobile/tablet behavior so the navigation does not become a long list of repeated CTAs.
 
 ### Phase 4 - Empty-state flow
 
-- [ ] Design one clean no-space empty state in the main workspace.
-- [ ] Make the empty state explain the order clearly: create/select space -> upload source -> ask or practice.
+- [x] Design one clean no-space empty state in the main workspace.
+- [x] Make the empty state explain the order clearly: create/select space -> upload source -> ask or practice.
 - [x] Use only one prominent action in the no-space state.
 - [x] Hide or disable tutor/tools affordances with calm explanatory copy until sources exist.
 - [x] Ensure disabled states do not look like errors or broken buttons.
@@ -125,8 +125,8 @@ Interaction rule: the sidebar should be a map, not a second dashboard.
 
 - [x] Verify only one element per screen has primary-button visual weight.
 - [x] Use Mentora blue/lavender accent consistently and avoid extra arbitrary colors.
-- [ ] Keep all interactive text WCAG AA contrast compliant.
-- [ ] Keep CTA labels on one line at desktop.
+- [x] Keep all interactive text WCAG AA contrast compliant.
+- [x] Keep CTA labels on one line at desktop.
 - [x] Maintain Geist typography and tight but readable headings.
 - [x] Use motion only for state changes and hover/tap feedback, not constant animation.
 
@@ -139,17 +139,30 @@ Interaction rule: the sidebar should be a map, not a second dashboard.
 - [x] Update `ToolStudio` to group practice generators.
 - [x] Review `src/app/globals.css` only for targeted class cleanup; avoid large `!important` overrides.
 - [x] Run lint/typecheck/build or the closest available project checks.
-- [ ] Run responsive QA for mobile and desktop.
+- [x] Run responsive QA for mobile and desktop.
 - [ ] Capture before/after screenshots for the sidebar and dashboard.
 - [x] Mark completed checklist items in this file after implementation.
+
+### Phase 10 - Duplicate surface removal
+
+- [x] Remove the duplicate authenticated top title from the utility command bar.
+- [x] Remove the old `WorkspaceHeader` panel that repeated page title, model selector, upload, metrics, and readiness.
+- [x] Remove the home right-rail study pulse panel that repeated dashboard progress and recent activity.
+- [x] Keep model selection only inside the Tutor and Practice work areas where the choice affects the task.
+- [x] Keep upload as the primary source action in dashboard/source states instead of repeating it in a page header.
+- [x] Remove unused component helpers from the deleted panels so the older structure cannot reappear accidentally.
+- [x] Compress the sidebar active-space area into a context row instead of repeating the no-space explanation.
+- [x] Remove duplicate no-source helper copy from the Practice generator header.
 
 ## Run Notes
 
 - [x] `npm run typecheck` passed.
 - [x] `npm run lint` passed.
 - [x] `npm run build` passed.
-- [ ] `npm run qa:responsive` completed desktop/mobile layout checks with no horizontal overflow, but the command still exits non-zero because the local page triggers Supabase `auth/v1/token?grant_type=password` 400 responses from the configured dev auto-login.
-- [ ] Authenticated dashboard screenshots are still pending because the local Supabase password-token flow is failing before a session opens.
+- [x] `npm run qa:responsive` passed on desktop and mobile with no horizontal overflow and no console errors.
+- [x] Contrast sanity check passed for the new interactive foreground/background pairs.
+- [ ] Authenticated dashboard screenshots are still pending because no local authenticated session was available during this pass.
+- [ ] Re-run checks after duplicate surface removal.
 
 ## Non-goals
 

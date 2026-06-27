@@ -415,7 +415,6 @@ export function MentoraApp() {
   const [activeSpaceId, setActiveSpaceId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<AppView>("home");
   const [busy, setBusy] = useState<string | null>(null);
-  const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -440,7 +439,6 @@ export function MentoraApp() {
       return;
     }
 
-    setWorkspaceLoading(true);
     let workspaceResult: unknown[];
 
     try {
@@ -459,7 +457,6 @@ export function MentoraApp() {
       ]);
     } catch (caught) {
       reportClientError("Workspace network request failed", caught);
-      setWorkspaceLoading(false);
       setError(t.authNetworkError);
       // A stale/invalid session often surfaces here. Force a clean re-auth.
       try {
@@ -485,8 +482,6 @@ export function MentoraApp() {
       { data: unknown; error: unknown },
       { data: unknown; error: unknown },
     ];
-
-    setWorkspaceLoading(false);
 
     if (profileError) {
       reportClientError("Profile load failed", profileError);
@@ -601,8 +596,18 @@ export function MentoraApp() {
           return;
         }
         if (error || !data.session) {
-          if (error) {
-            void supabase.auth.signOut();
+          // A stale/revoked refresh token (e.g. after a password reset) surfaces
+          // here as "Invalid Refresh Token". Always clear the stored session so
+          // the bad cookie doesn't replay on the next load.
+          const isStaleRefresh =
+            !!error && /refresh token|auth session missing/i.test(error.message ?? "");
+          if (error && !isStaleRefresh) {
+            reportClientError("Session initialization failed", error);
+          }
+          try {
+            await supabase.auth.signOut();
+          } catch {
+            // ignore — cookies are cleared locally regardless
           }
           setSession(null);
           await autoSignInDev(supabase, manualSignOutRef);
@@ -638,12 +643,17 @@ export function MentoraApp() {
         await autoSignInDev(supabase, manualSignOutRef);
       });
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
-      if (event === "SIGNED_OUT" || event === "TOKEN_REFRESHED") {
-        if (event === "SIGNED_OUT") {
-          setSession(null);
-          void autoSignInDev(supabase, manualSignOutRef);
-          return;
-        }
+      if (event === "SIGNED_OUT") {
+        setSession(null);
+        void autoSignInDev(supabase, manualSignOutRef);
+        return;
+      }
+      if (event === "TOKEN_REFRESHED" && !nextSession) {
+        // Refresh failed (revoked/expired token). Clear the stale cookie so it
+        // doesn't error again on the next reload.
+        void supabase.auth.signOut();
+        setSession(null);
+        return;
       }
       setSession(nextSession);
       if (!nextSession) {
@@ -707,11 +717,9 @@ export function MentoraApp() {
   );
 
   const readyDocuments = activeDocuments.filter((document) => document.processing_status === "ready");
-  const failedDocuments = activeDocuments.filter((document) => document.processing_status === "failed");
   const processingDocuments = activeDocuments.filter(
     (document) => document.processing_status !== "ready" && document.processing_status !== "failed"
   );
-  const readiness = activeDocuments.length > 0 ? Math.round((readyDocuments.length / activeDocuments.length) * 100) : 0;
   const hasReadySources = readyDocuments.length > 0;
 
   useEffect(() => {
@@ -808,7 +816,7 @@ export function MentoraApp() {
         )}
       </AnimatePresence>
 
-      <div className={`liquid-app-grid ${activeView === "home" ? "has-insights" : "is-focus"}`}>
+      <div className="liquid-app-grid is-focus">
         <NavigationRail
           activeSpace={activeSpace}
           activeView={activeView}
@@ -825,11 +833,7 @@ export function MentoraApp() {
 
         <section className="liquid-main-scroll">
           {activeView !== "profile" && (
-            <header className="liquid-command-bar" aria-label="Workspace command bar">
-              <div className="liquid-command-context">
-                <span>{activeSpace?.name ?? t.dashboard}</span>
-                <strong>{activeView === "home" ? t.dashboard : t[`${activeView}Title`]}</strong>
-              </div>
+            <header className="liquid-command-bar is-utility-only" aria-label="Workspace command bar">
               <div className="liquid-command-actions">
                 <button className="liquid-icon-button" aria-label={t.switchLanguage} onClick={() => setLocale(locale === "es" ? "en" : "es")} type="button">
                   <Globe2 size={18} />
@@ -847,28 +851,6 @@ export function MentoraApp() {
           )}
 
           <section className="liquid-content-panel">
-            {activeView !== "profile" && (
-              <WorkspaceHeader
-                activeSpace={activeSpace}
-                activeView={activeView}
-                artifacts={activeArtifacts}
-                documents={activeDocuments}
-                failedDocuments={failedDocuments}
-                loading={workspaceLoading}
-                models={models}
-                openRouterConnected={openRouterConnected}
-                openRouterServerConnected={openRouterServerConnected}
-                onSelectModel={handleModelSelect}
-                onUpload={uploadDocument}
-                processingDocuments={processingDocuments}
-                readyDocuments={readyDocuments}
-                readiness={readiness}
-                selectedModel={selectedModel}
-                uploadBusy={busy === "upload"}
-                t={t}
-              />
-            )}
-
             <div className="min-h-0 flex-1 overflow-visible px-3 pb-5 sm:px-5 sm:pb-6">
               <AnimatePresence mode="wait">
                 {activeView === "home" && (
@@ -928,7 +910,11 @@ export function MentoraApp() {
                       activeSpace={activeSpace}
                       busy={busy}
                       hasReadySources={hasReadySources}
+                      models={models}
+                      openRouterConnected={openRouterConnected}
+                      openRouterServerConnected={openRouterServerConnected}
                       onGenerate={(kind) => activeSpace && generateTool(activeSpace.id, kind)}
+                      onSelectModel={handleModelSelect}
                       onUpload={uploadDocument}
                       selectedModel={selectedModel}
                       t={t}
@@ -955,19 +941,6 @@ export function MentoraApp() {
             </div>
           </section>
         </section>
-
-        {activeView === "home" && (
-          <aside className="liquid-right-rail">
-            <InsightPanel
-              artifacts={activeArtifacts}
-              documents={activeDocuments}
-              loading={workspaceLoading}
-              profile={profile}
-              readyDocuments={readyDocuments}
-              t={t}
-            />
-          </aside>
-        )}
       </div>
     </main>
   );
@@ -2023,7 +1996,7 @@ function NavigationRail({
   ];
   const initials = (profile?.full_name ?? profile?.email ?? "M").slice(0, 2).toUpperCase();
   const isProfileActive = activeView === "profile";
-  const spaceStatus = activeSpace ? `${documents.length} ${t.sources}` : t.noSpaceCompact;
+  const activeSpaceDetail = activeSpace ? `${documents.length} ${t.sources}` : "";
 
   return (
     <aside className="liquid-nav" aria-label="Student navigation">
@@ -2070,29 +2043,32 @@ function NavigationRail({
           })}
         </nav>
 
-        <section className="liquid-space-card" aria-label={t.currentSpace}>
+        <section className="liquid-space-card is-compact" aria-label={t.currentSpace}>
+          <span className="liquid-space-icon" aria-hidden="true">
+            <BookOpen size={15} />
+          </span>
           <div>
-            <span>{t.currentSpace}</span>
             <strong>{activeSpace?.name ?? t.noSpaceTitle}</strong>
-            <small>{activeSpace?.description ?? spaceStatus}</small>
+            {activeSpaceDetail && <small>{activeSpaceDetail}</small>}
           </div>
           <CreateSpaceButton busy={busy === "space"} label={t.newSpace} onCreate={onCreate} t={t} />
         </section>
 
-        <div className="liquid-space-list" aria-label={t.spaces}>
-          {spaces.slice(0, 4).map((space) => (
-            <button
-              key={space.id}
-              className={`liquid-space-option ${activeSpace?.id === space.id ? "is-active" : ""}`}
-              onClick={() => onSelectSpace(space.id)}
-              type="button"
-            >
-              <BookOpen size={16} />
-              <span>{space.name}</span>
-            </button>
-          ))}
-          {spaces.length === 0 && <p>{t.noSpacesCompact}</p>}
-        </div>
+        {spaces.length > 0 && (
+          <div className="liquid-space-list" aria-label={t.spaces}>
+            {spaces.slice(0, 4).map((space) => (
+              <button
+                key={space.id}
+                className={`liquid-space-option ${activeSpace?.id === space.id ? "is-active" : ""}`}
+                onClick={() => onSelectSpace(space.id)}
+                type="button"
+              >
+                <BookOpen size={16} />
+                <span>{space.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="liquid-nav-footer">
           <button className="liquid-signout" onClick={onSignOut} type="button">
@@ -2102,96 +2078,6 @@ function NavigationRail({
         </div>
       </div>
     </aside>
-  );
-}
-
-function WorkspaceHeader({
-  activeSpace,
-  activeView,
-  artifacts,
-  documents,
-  failedDocuments,
-  loading,
-  models,
-  openRouterConnected,
-  openRouterServerConnected,
-  onSelectModel,
-  onUpload,
-  processingDocuments,
-  readyDocuments,
-  readiness,
-  selectedModel,
-  uploadBusy,
-  t,
-}: {
-  activeSpace: StudySpace | null;
-  activeView: AppView;
-  artifacts: GeneratedArtifact[];
-  documents: DocumentRecord[];
-  failedDocuments: DocumentRecord[];
-  loading: boolean;
-  models: ModelOption[];
-  openRouterConnected: boolean;
-  openRouterServerConnected: boolean;
-  onSelectModel: (modelId: string) => void;
-  onUpload: (file: File) => void;
-  processingDocuments: DocumentRecord[];
-  readyDocuments: DocumentRecord[];
-  readiness: number;
-  selectedModel: string;
-  uploadBusy: boolean;
-  t: Record<string, string>;
-}) {
-  const viewTitle = activeView === "home" ? t.dashboard : t[`${activeView}Title`];
-
-  if (activeView === "home") {
-    return null;
-  }
-
-  return (
-    <div className="liquid-workspace-header">
-      <div className="liquid-workspace-title">
-        <span>
-          {viewIcons[activeView]}
-          {activeSpace?.name ?? t.dashboard}
-        </span>
-        <h1>{viewTitle}</h1>
-      </div>
-
-      <div className="liquid-workspace-tools">
-        {activeView === "tools" && (
-          <ModelSelector
-            models={models}
-            openRouterConnected={openRouterConnected}
-            openRouterServerConnected={openRouterServerConnected}
-            selectedModel={selectedModel}
-            t={t}
-            onSelect={onSelectModel}
-          />
-        )}
-        {activeView === "documents" && (
-          <UploadControl disabled={uploadBusy} loading={uploadBusy} label={t.uploadPdf} onUpload={onUpload} />
-        )}
-        {loading && (
-          <span className="liquid-status-chip">
-            <Loader2 className="animate-spin" size={16} />
-            {t.syncing}
-          </span>
-        )}
-      </div>
-
-      <section className="liquid-metric-strip" aria-label={t.learningPulse}>
-        <Metric icon={<FileText size={17} />} label={t.documents} value={documents.length.toString()} />
-        <Metric icon={<CheckCircle2 size={17} />} label={t.ready} value={readyDocuments.length.toString()} tone="success" />
-        <Metric icon={<Clock3 size={17} />} label={t.processing} value={processingDocuments.length.toString()} tone="warning" />
-        <Metric icon={<Sparkles size={17} />} label={t.generated} value={artifacts.length.toString()} tone={failedDocuments.length > 0 ? "danger" : "accent"} />
-        <div className="liquid-readiness-mini" aria-label={`${t.readiness} ${readiness}%`}>
-          <span>{readiness > 0 ? t.readyToStudy : t.buildingIndex}</span>
-          <div><i style={{ width: `${readiness}%` }} /></div>
-          <strong>{readiness}%</strong>
-        </div>
-      </section>
-    </div>
   );
 }
 
@@ -2294,6 +2180,11 @@ function RealStudentDashboard({
     { title: t.createFlashcards, detail: t.flashcardsDescription, icon: <Layers3 size={17} /> },
     { title: t.generateQuiz, detail: t.quizDescription, icon: <ClipboardList size={17} /> },
   ];
+  const setupFlow = [
+    { label: t.setupStepSpace, icon: <BookOpen size={14} /> },
+    { label: t.setupStepSource, icon: <FileText size={14} /> },
+    { label: t.setupStepStudy, icon: <BrainCircuit size={14} /> },
+  ];
   const recommendations = [
     readyDocuments.length > 0 ? t.readyToStudy : t.buildingIndex,
     activeDocuments.length === 0 ? t.emptyLibraryText : `${activeDocuments.length} ${t.documents}`,
@@ -2323,6 +2214,20 @@ function RealStudentDashboard({
           <span>{t.recommendedSessions}</span>
           <strong>{nextStudyAction.title}</strong>
           <p>{nextStudyAction.detail}</p>
+          {activeDocuments.length === 0 && (
+            <div className="cockpit-setup-flow" aria-label={t.emptyWorkspaceFlow}>
+              <div>
+                {setupFlow.map((step, index) => (
+                  <span key={step.label}>
+                    {step.icon}
+                    {step.label}
+                    {index < setupFlow.length - 1 && <ChevronRight size={12} />}
+                  </span>
+                ))}
+              </div>
+              <small>{t.emptyWorkspaceFlow}</small>
+            </div>
+          )}
           <div className="cockpit-next-footer">
             <div
               className="liquid-readiness-ring"
@@ -2703,7 +2608,11 @@ function ToolStudio({
   activeSpace,
   busy,
   hasReadySources,
+  models,
+  openRouterConnected,
+  openRouterServerConnected,
   onGenerate,
+  onSelectModel,
   onUpload,
   selectedModel,
   t,
@@ -2712,7 +2621,11 @@ function ToolStudio({
   activeSpace: StudySpace | null;
   busy: string | null;
   hasReadySources: boolean;
+  models: ModelOption[];
+  openRouterConnected: boolean;
+  openRouterServerConnected: boolean;
   onGenerate: (kind: ToolKind) => void;
+  onSelectModel: (modelId: string) => void;
   onUpload: (file: File) => void;
   selectedModel: string;
   t: Record<string, string>;
@@ -2726,7 +2639,7 @@ function ToolStudio({
         <header>
           <span><WandSparkles size={16} /> {t.studyTools}</span>
           <h2>{t.toolsTitle}</h2>
-          <p>{hasReadySources ? t.practicePreviewText : t.toolsNeedSources}</p>
+          {hasReadySources && <p>{t.practicePreviewText}</p>}
         </header>
 
         {hasReadySources ? (
@@ -2773,9 +2686,21 @@ function ToolStudio({
           </div>
         )}
 
-        <div className="practice-model-note">
-          {t.aiModel}: {selectedModel}
-        </div>
+        <details className="practice-model-control">
+          <summary>
+            <Sparkles size={15} />
+            <span>{t.aiModel}</span>
+            <small>{selectedModel}</small>
+          </summary>
+          <ModelSelector
+            models={models}
+            openRouterConnected={openRouterConnected}
+            openRouterServerConnected={openRouterServerConnected}
+            selectedModel={selectedModel}
+            t={t}
+            onSelect={onSelectModel}
+          />
+        </details>
       </section>
 
       <section className="generated-panel min-h-0 rounded-3xl border border-white/10 bg-slate-950/55 p-4">
@@ -3320,65 +3245,6 @@ function ProfileStudio({
   );
 }
 
-function InsightPanel({
-  artifacts,
-  documents,
-  loading,
-  profile,
-  readyDocuments,
-  t,
-}: {
-  artifacts: GeneratedArtifact[];
-  documents: DocumentRecord[];
-  loading: boolean;
-  profile: Profile | null;
-  readyDocuments: DocumentRecord[];
-  t: Record<string, string>;
-}) {
-  const readiness = documents.length > 0 ? Math.round((readyDocuments.length / documents.length) * 100) : 0;
-  const recentItems = [
-    ...documents.slice(0, 3).map((document) => ({ id: document.id, kind: "document" as const, node: <DocumentMini document={document} t={t} /> })),
-    ...artifacts.slice(0, 2).map((artifact) => ({ id: artifact.id, kind: "artifact" as const, node: <ArtifactMini artifact={artifact} t={t} /> })),
-  ];
-
-  return (
-    <section className="liquid-study-pulse" aria-label={t.studyPulse}>
-      <div className="liquid-pulse-header">
-        <div>
-          <span>{t.studyPulse}</span>
-          <h2>{profile?.full_name ?? profile?.email ?? t.student}</h2>
-        </div>
-        <span className="liquid-pulse-icon">
-          {loading ? <Loader2 className="animate-spin" size={18} /> : <Flame size={18} />}
-        </span>
-      </div>
-
-      <div className="liquid-pulse-score">
-        <strong>{readiness}%</strong>
-        <span>{readiness > 0 ? t.readyToStudy : t.buildingIndex}</span>
-        <div><i style={{ width: `${readiness}%` }} /></div>
-      </div>
-
-      <div className="liquid-pulse-metrics">
-        <ProgressRow label={t.sourcesReady} value={readyDocuments.length} total={Math.max(documents.length, 1)} />
-        <ProgressRow label={t.generatedOutput} value={artifacts.length} total={Math.max(artifacts.length + 2, 3)} />
-      </div>
-
-      <div className="liquid-recent-activity">
-        <h3>{t.recentActivity}</h3>
-        <div className="liquid-activity-list">
-          {recentItems.map((item) => (
-            <div key={`${item.kind}-${item.id}`}>{item.node}</div>
-          ))}
-          {recentItems.length === 0 && (
-            <EmptyState compact icon={<Sparkles size={18} />} title={t.emptyActivityTitle} text={t.emptyActivityText} />
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function TextField({
   autoComplete,
   disabled = false,
@@ -3835,25 +3701,6 @@ function OpenRouterConnectDialog({
   );
 }
 
-function Metric({
-  icon,
-  label,
-  value,
-  tone = "default",
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  tone?: "default" | "success" | "warning" | "danger" | "accent";
-}) {
-  return (
-    <div className={`metric-card metric-${tone}`}>
-      <div className="flex items-center gap-2 text-xs font-bold uppercase text-slate-400">{icon}{label}</div>
-      <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
-    </div>
-  );
-}
-
 function EmptyState({
   compact = false,
   icon,
@@ -4045,20 +3892,6 @@ function FlashcardDeck({
   );
 }
 
-function ArtifactMini({ artifact, t }: { artifact: GeneratedArtifact; t: Record<string, string> }) {
-  return (
-    <div className="mini-row">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-300/10 text-violet-100">
-        <Sparkles size={16} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold text-white">{artifact.title}</span>
-        <span className="block truncate text-xs text-slate-400">{t[artifact.kind] ?? artifact.kind}</span>
-      </span>
-    </div>
-  );
-}
-
 function StatusBadge({ status, t }: { status: DocumentRecord["processing_status"]; t: Record<string, string> }) {
   return (
     <span className={`status-badge status-${status}`}>
@@ -4098,22 +3931,6 @@ function ProfileFact({
     <div className={`rounded-2xl border border-white/10 bg-white/[0.04] ${compact ? "p-2" : "p-3"}`}>
       <p className="text-[11px] font-bold uppercase text-slate-500">{label}</p>
       <p className="mt-1 break-words text-sm font-semibold text-slate-100">{value}</p>
-    </div>
-  );
-}
-
-function ProgressRow({ label, value, total }: { label: string; value: number; total: number }) {
-  const percent = Math.min(100, Math.round((value / Math.max(total, 1)) * 100));
-
-  return (
-    <div>
-      <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-300">
-        <span>{label}</span>
-        <span>{value}</span>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-white/10">
-        <div className="h-full rounded-full bg-cyan-300 transition-[width] duration-500" style={{ width: `${percent}%` }} />
-      </div>
     </div>
   );
 }
