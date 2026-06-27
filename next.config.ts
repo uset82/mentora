@@ -47,6 +47,10 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
   serverExternalPackages: ["pdf-parse"],
+  allowedDevOrigins:
+    process.env.NODE_ENV !== "production"
+      ? ["*.trycloudflare.com", "rewards-collected-explore-essex.trycloudflare.com"]
+      : [],
   turbopack: {
     root: process.cwd(),
   },
