@@ -857,7 +857,6 @@ export function MentoraApp() {
                   <MotionView key="home">
                     <RealStudentDashboard
                       activeDocuments={activeDocuments}
-                      activeSpace={activeSpace}
                       artifacts={activeArtifacts}
                       busy={busy}
                       onSelectView={setActiveView}
@@ -2043,16 +2042,18 @@ function NavigationRail({
           })}
         </nav>
 
-        <section className="liquid-space-card is-compact" aria-label={t.currentSpace}>
-          <span className="liquid-space-icon" aria-hidden="true">
-            <BookOpen size={15} />
-          </span>
-          <div>
-            <strong>{activeSpace?.name ?? t.noSpaceTitle}</strong>
-            {activeSpaceDetail && <small>{activeSpaceDetail}</small>}
-          </div>
-          <CreateSpaceButton busy={busy === "space"} label={t.newSpace} onCreate={onCreate} t={t} />
-        </section>
+        {activeSpace && (
+          <section className="liquid-space-card is-compact" aria-label={t.currentSpace}>
+            <span className="liquid-space-icon" aria-hidden="true">
+              <BookOpen size={15} />
+            </span>
+            <div>
+              <strong>{activeSpace.name}</strong>
+              {activeSpaceDetail && <small>{activeSpaceDetail}</small>}
+            </div>
+            <CreateSpaceButton busy={busy === "space"} label={t.newSpace} onCreate={onCreate} t={t} />
+          </section>
+        )}
 
         {spaces.length > 0 && (
           <div className="liquid-space-list" aria-label={t.spaces}>
@@ -2083,7 +2084,6 @@ function NavigationRail({
 
 function RealStudentDashboard({
   activeDocuments,
-  activeSpace,
   artifacts,
   busy,
   onSelectView,
@@ -2093,7 +2093,6 @@ function RealStudentDashboard({
   t,
 }: {
   activeDocuments: DocumentRecord[];
-  activeSpace: StudySpace | null;
   artifacts: GeneratedArtifact[];
   busy: string | null;
   onSelectView: (view: AppView) => void;
@@ -2107,9 +2106,7 @@ function RealStudentDashboard({
   const processingDocuments = activeDocuments.filter((document) =>
     ["pending", "processing"].includes(document.processing_status),
   );
-  const failedDocuments = activeDocuments.filter((document) => document.processing_status === "failed");
   const readiness = activeDocuments.length > 0 ? Math.round((readyDocuments.length / activeDocuments.length) * 100) : 0;
-  const readinessLabel = readiness >= 80 ? t.readyToStudy : readiness > 0 ? t.buildingIndex : t.emptyLibraryTitle;
   const nextStudyAction:
     | { kind: "upload"; title: string; label: string; detail: string; icon: ReactNode }
     | { kind: "view"; title: string; label: string; detail: string; icon: ReactNode; view: AppView } =
@@ -2175,22 +2172,11 @@ function RealStudentDashboard({
       status: readyDocuments.length > 0 ? t.ready : t.waitingForSources,
     },
   ];
-  const practiceOptions = [
-    { title: t.createSummary, detail: t.apa_summaryDescription, icon: <FileText size={17} /> },
-    { title: t.createFlashcards, detail: t.flashcardsDescription, icon: <Layers3 size={17} /> },
-    { title: t.generateQuiz, detail: t.quizDescription, icon: <ClipboardList size={17} /> },
-  ];
   const setupFlow = [
     { label: t.setupStepSpace, icon: <BookOpen size={14} /> },
     { label: t.setupStepSource, icon: <FileText size={14} /> },
     { label: t.setupStepStudy, icon: <BrainCircuit size={14} /> },
   ];
-  const recommendations = [
-    readyDocuments.length > 0 ? t.readyToStudy : t.buildingIndex,
-    activeDocuments.length === 0 ? t.emptyLibraryText : `${activeDocuments.length} ${t.documents}`,
-    processingDocuments.length > 0 ? `${processingDocuments.length} ${t.processing}` : null,
-    failedDocuments.length > 0 ? `${failedDocuments.length} ${t.failed}` : null,
-  ].filter((item): item is string => Boolean(item));
 
   return (
     <div className="liquid-dashboard cockpit-dashboard">
@@ -2199,7 +2185,7 @@ function RealStudentDashboard({
         <div className="liquid-hero-copy cockpit-hero-copy">
           <span className="liquid-kicker"><BrainCircuit size={16} /> {t.studyPulse}</span>
           <h2>{t.dashboard}, {firstName}</h2>
-          <p>{nextStudyAction.detail}</p>
+          <p>{t.dashboardWelcome}</p>
           <div className="cockpit-signal-strip" aria-label={t.learningPulse}>
             {cockpitStats.map((stat) => (
               <span key={stat.label}>
@@ -2249,60 +2235,7 @@ function RealStudentDashboard({
         </aside>
       </section>
 
-      <section className="cockpit-topology" aria-label={t.learningPulse}>
-        <article className="liquid-card cockpit-course-card">
-          <header>
-            <span><BookOpen size={17} /> {t.myCourses}</span>
-            {nextStudyAction.kind !== "view" || nextStudyAction.view !== "documents" ? (
-              <button onClick={() => onSelectView("documents")} type="button">{t.openSources}</button>
-            ) : null}
-          </header>
-          <div className="cockpit-course-main">
-            <div>
-              <small>{t.currentSpace}</small>
-              <strong>{activeSpace?.name ?? t.noSpaceTitle}</strong>
-              <p>{activeSpace ? activeSpace.description ?? t.personalWorkspace : t.noSpaceDescription}</p>
-            </div>
-            <em>{readyDocuments.length}/{Math.max(activeDocuments.length, 1)}</em>
-          </div>
-          <div className="liquid-progress-track"><i style={{ width: `${readiness}%` }} /></div>
-          <div className="liquid-course-meta cockpit-metric-row">
-            <span>{activeDocuments.length} {t.documents}</span>
-            <span>{artifacts.length} {t.generated}</span>
-            <span>{processingDocuments.length} {t.processing}</span>
-          </div>
-        </article>
-
-        <article className="liquid-card cockpit-pulse-card">
-          <span>{t.readiness}</span>
-          <strong>{readiness}%</strong>
-          <p>{readinessLabel}</p>
-          <div className="liquid-progress-track"><i style={{ width: `${readiness}%` }} /></div>
-        </article>
-      </section>
-
-      <section className="liquid-dashboard-grid cockpit-grid">
-        <article className="liquid-card cockpit-materials-card">
-          <header>
-            <span><FileText size={17} /> {t.recentMaterials}</span>
-            {nextStudyAction.kind !== "view" || nextStudyAction.view !== "documents" ? (
-              <button onClick={() => onSelectView("documents")} type="button">{t.openSources}</button>
-            ) : null}
-          </header>
-          <div className="liquid-list cockpit-material-list">
-            {materials.map((document, index) => (
-              <button key={document.id} onClick={() => onSelectView("documents")} type="button">
-                <span className={`material-thumb material-thumb-${index % 4}`} />
-                <span>{document.file_name}</span>
-                <small>{document.processing_status === "ready" ? t.ready : t.processing}</small>
-              </button>
-            ))}
-            {materials.length === 0 && (
-              <EmptyState compact icon={<FileText size={18} />} title={t.emptyLibraryTitle} text={t.emptyLibraryText} />
-            )}
-          </div>
-        </article>
-
+      <section className={`liquid-dashboard-grid cockpit-grid ${materials.length === 0 ? "is-compact" : ""}`}>
         <article className="liquid-card cockpit-plan-card">
           <header>
             <span><Clock3 size={17} /> {t.studyPathTitle}</span>
@@ -2322,41 +2255,25 @@ function RealStudentDashboard({
           </div>
         </article>
 
-        <article className="liquid-card liquid-card-tutor cockpit-tutor-card">
-          <header>
-            <span><Sparkles size={17} /> {t.tutorStatusTitle}</span>
-            {nextStudyAction.kind !== "view" || nextStudyAction.view !== "tutor" ? (
-              <button onClick={() => onSelectView("tutor")} type="button">{t.openTutor}</button>
-            ) : null}
-          </header>
-          <div className="liquid-tutor-body">
-            <MentoraMascot />
-            <ul>
-              {recommendations.map((recommendation) => (
-                <li key={recommendation}>{recommendation}</li>
+        {materials.length > 0 && (
+          <article className="liquid-card cockpit-materials-card">
+            <header>
+              <span><FileText size={17} /> {t.recentMaterials}</span>
+              {nextStudyAction.kind !== "view" || nextStudyAction.view !== "documents" ? (
+                <button onClick={() => onSelectView("documents")} type="button">{t.openSources}</button>
+              ) : null}
+            </header>
+            <div className="liquid-list cockpit-material-list">
+              {materials.map((document, index) => (
+                <button key={document.id} onClick={() => onSelectView("documents")} type="button">
+                  <span className={`material-thumb material-thumb-${index % 4}`} />
+                  <span>{document.file_name}</span>
+                  <small>{document.processing_status === "ready" ? t.ready : t.processing}</small>
+                </button>
               ))}
-            </ul>
-          </div>
-        </article>
-
-        <article className="liquid-card cockpit-tools-card">
-          <header>
-            <span><WandSparkles size={17} /> {t.practicePreviewTitle}</span>
-            {nextStudyAction.kind !== "view" || nextStudyAction.view !== "tools" ? (
-              <button onClick={() => onSelectView("tools")} type="button">{t.openPractice}</button>
-            ) : null}
-          </header>
-          <p className="cockpit-card-note">{t.practicePreviewText}</p>
-          <div className="cockpit-practice-preview">
-            {practiceOptions.map((option) => (
-              <div key={option.title}>
-                <span>{option.icon}</span>
-                <strong>{option.title}</strong>
-                <small>{option.detail}</small>
-              </div>
-            ))}
-          </div>
-        </article>
+            </div>
+          </article>
+        )}
       </section>
     </div>
   );

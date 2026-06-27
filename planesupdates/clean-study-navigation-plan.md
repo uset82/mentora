@@ -140,7 +140,7 @@ Interaction rule: the sidebar should be a map, not a second dashboard.
 - [x] Review `src/app/globals.css` only for targeted class cleanup; avoid large `!important` overrides.
 - [x] Run lint/typecheck/build or the closest available project checks.
 - [x] Run responsive QA for mobile and desktop.
-- [ ] Capture before/after screenshots for the sidebar and dashboard.
+- [x] Capture before/after screenshots for the sidebar and dashboard.
 - [x] Mark completed checklist items in this file after implementation.
 
 ### Phase 10 - Duplicate surface removal
@@ -152,7 +152,10 @@ Interaction rule: the sidebar should be a map, not a second dashboard.
 - [x] Keep upload as the primary source action in dashboard/source states instead of repeating it in a page header.
 - [x] Remove unused component helpers from the deleted panels so the older structure cannot reappear accidentally.
 - [x] Compress the sidebar active-space area into a context row instead of repeating the no-space explanation.
+- [x] Hide the sidebar active-space row entirely when no space exists so `Sin espacio` appears once in the main workspace.
 - [x] Remove duplicate no-source helper copy from the Practice generator header.
+- [x] Remove duplicate dashboard active-space, preparation, tutor-preview, practice-preview, and empty-materials panels from `Resumen`.
+- [x] Keep recent materials on `Resumen` only when materials actually exist; otherwise the first upload action stays in the hero.
 
 ## Run Notes
 
@@ -161,8 +164,13 @@ Interaction rule: the sidebar should be a map, not a second dashboard.
 - [x] `npm run build` passed.
 - [x] `npm run qa:responsive` passed on desktop and mobile with no horizontal overflow and no console errors.
 - [x] Contrast sanity check passed for the new interactive foreground/background pairs.
-- [ ] Authenticated dashboard screenshots are still pending because no local authenticated session was available during this pass.
-- [ ] Re-run checks after duplicate surface removal.
+- [x] Authenticated dashboard screenshots captured:
+  - [x] `.qa/auth-desktop-home-clean.png`
+  - [x] `.qa/auth-mobile-home-clean.png`
+  - [x] `.qa/auth-desktop-practice-clean.png`
+  - [x] `.qa/auth-mobile-practice-clean.png`
+- [x] Re-run checks after duplicate surface removal.
+- [x] Authenticated workspace QA confirmed no duplicate workspace header, right rail, command title block, empty-materials panel, tutor preview card, or practice preview card.
 
 ## Non-goals
 
