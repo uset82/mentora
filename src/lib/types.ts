@@ -44,6 +44,9 @@ export type DocumentRecord = {
   user_id: string;
   file_name: string;
   storage_path: string;
+  material_type: MaterialType;
+  mime_type: string | null;
+  source_url: string | null;
   processing_status:
     | "pending"
     | "processing"
@@ -70,7 +73,18 @@ export type Citation = {
   content: string;
 };
 
-export type ToolKind = "quiz" | "flashcards" | "apa_summary";
+export type MaterialType = "pdf" | "image" | "document" | "link" | "text";
+
+export type ToolKind =
+  | "summary"
+  | "quiz"
+  | "flashcards"
+  | "apa_summary"
+  | "mind_map"
+  | "data_table"
+  | "study_guide"
+  | "diagram"
+  | "infographic";
 
 export type GeneratedArtifact = {
   id: string;
@@ -80,4 +94,14 @@ export type GeneratedArtifact = {
   content: string;
   citations: Citation[];
   created_at: string;
+};
+
+export type StudyNote = {
+  id: string;
+  study_space_id: string;
+  title: string;
+  content: string;
+  selected_document_ids: string[];
+  created_at: string;
+  updated_at: string;
 };

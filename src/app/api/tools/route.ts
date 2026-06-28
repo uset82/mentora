@@ -19,22 +19,35 @@ export const runtime = "nodejs";
 
 const toolSchema = z.object({
   studySpaceId: z.string().uuid(),
-  kind: z.enum(["quiz", "flashcards", "apa_summary"]),
+  kind: z.enum(["summary", "quiz", "flashcards", "apa_summary", "mind_map", "data_table", "study_guide", "diagram", "infographic"]),
   locale: z.enum(["es", "en"]).default("es"),
   model: z.string().trim().min(1).max(160).optional(),
   openRouterApiKey: z.string().trim().min(20).max(512).optional(),
+  selectedDocumentIds: z.array(z.string().uuid()).max(20).default([]),
 });
 
 const titles = {
   es: {
+    summary: "Resumen generado",
     quiz: "Quiz generado",
     flashcards: "Flashcards generadas",
     apa_summary: "Resumen APA",
+    mind_map: "Mapa mental",
+    data_table: "Tabla de datos",
+    study_guide: "Guia de estudio",
+    diagram: "Diagrama generado",
+    infographic: "Infografia generada",
   },
   en: {
+    summary: "Generated summary",
     quiz: "Generated quiz",
     flashcards: "Generated flashcards",
     apa_summary: "APA summary",
+    mind_map: "Mind map",
+    data_table: "Data table",
+    study_guide: "Study guide",
+    diagram: "Generated diagram",
+    infographic: "Generated infographic",
   },
 };
 
@@ -74,6 +87,7 @@ export async function POST(request: Request) {
       studySpaceId: body.studySpaceId,
       query: `Generate ${body.kind} from the most important concepts in this study space.`,
       limit: 12,
+      selectedDocumentIds: body.selectedDocumentIds,
     });
 
     if (citations.length === 0) {
@@ -121,7 +135,7 @@ export async function POST(request: Request) {
       output_tokens: aiResult.outputTokens,
       latency_ms: aiResult.latencyMs,
       status: "success",
-      metadata: { route_latency_ms: Date.now() - startedAt },
+      metadata: { route_latency_ms: Date.now() - startedAt, selected_document_count: body.selectedDocumentIds.length },
     });
 
     return jsonResponse({ artifact, provider: aiResult.provider, model: aiResult.model });

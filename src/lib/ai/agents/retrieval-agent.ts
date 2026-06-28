@@ -7,6 +7,7 @@ export interface RetrievalOptions {
   tenantId: string;
   studySpaceId: string;
   query: string;
+  selectedDocumentIds?: string[];
 }
 
 /**
@@ -19,6 +20,7 @@ export async function retrieveRelevantContext({
   tenantId,
   studySpaceId,
   query,
+  selectedDocumentIds,
 }: RetrievalOptions): Promise<Citation[]> {
   const start = Date.now();
   console.log(`[Retrieval Agent] Querying semantic context for: "${query.substring(0, 60)}..."`);
@@ -29,6 +31,7 @@ export async function retrieveRelevantContext({
       tenantId,
       studySpaceId,
       query,
+      selectedDocumentIds,
     });
 
     const elapsed = Date.now() - start;

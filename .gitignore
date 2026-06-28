@@ -48,4 +48,7 @@ references/
 # local mock database
 .mentora-data/
 
+# local dev server logs
+.codex-dev-server*.log
+
 

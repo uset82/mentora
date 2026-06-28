@@ -49,7 +49,12 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["pdf-parse"],
   allowedDevOrigins:
     process.env.NODE_ENV !== "production"
-      ? ["*.trycloudflare.com", "rewards-collected-explore-essex.trycloudflare.com"]
+      ? [
+          "*.trycloudflare.com",
+          "rewards-collected-explore-essex.trycloudflare.com",
+          "*.lhr.life",
+          "c642850745ba1d.lhr.life",
+        ]
       : [],
   turbopack: {
     root: process.cwd(),

@@ -32,6 +32,7 @@ const chatSchema = z.object({
   model: z.string().trim().min(1).max(160).optional(),
   openRouterApiKey: z.string().trim().min(20).max(512).optional(),
   mode: z.enum(["fast", "tutor", "agent"]).default("fast"),
+  selectedDocumentIds: z.array(z.string().uuid()).max(20).default([]),
 });
 
 export async function POST(request: Request) {
@@ -57,35 +58,6 @@ export async function POST(request: Request) {
     }
 
     await requireOwnedStudySpace(service, profile, body.studySpaceId);
-
-    // Tutor mode requirements validation
-    if (body.mode === "tutor") {
-      const { data: spaceDocs } = await service
-        .from("documents")
-        .select("id, processing_status")
-        .eq("study_space_id", body.studySpaceId);
-
-      const hasDocs = spaceDocs && spaceDocs.length > 0;
-      if (!hasDocs) {
-        return jsonError(
-          body.locale === "es"
-            ? "No hay documentos en este espacio de estudio. Sube un PDF primero o usa el Chat Rápido."
-            : "There are no documents in this study space. Please upload a PDF first or use Fast Chat.",
-          400
-        );
-      }
-
-      const anyReady = spaceDocs.some((d) => d.processing_status === "ready");
-      if (!anyReady) {
-        return jsonError(
-          body.locale === "es"
-            ? "Tu PDF aún se está procesando. Puedes hacer preguntas generales usando el chat rápido ahora, o esperar a que el documento esté listo."
-            : "Your PDF is still being processed. You can ask general questions using Fast Chat now, or wait until the document is ready.",
-          400
-        );
-      }
-    }
-
     // --- AGENT INTERACTION: Orchestrate chat, fetch ready citations or precomputed outputs ---
     const orchResult = await orchestrateChat({
       service,
@@ -94,9 +66,16 @@ export async function POST(request: Request) {
       message: body.message,
       mode: body.mode,
       locale: body.locale,
+      selectedDocumentIds: body.selectedDocumentIds,
     });
 
     const citations = orchResult.citations;
+    const responseMeta = {
+      sourceCount: orchResult.selectedSourceCount ?? body.selectedDocumentIds.length,
+      citationsCount: citations.length,
+      mode: body.mode,
+      selectedSourceNames: orchResult.selectedSourceNames ?? [],
+    };
 
     // Persist conversation and user message
     const { data: conversation, error: conversationError } = await service
@@ -139,6 +118,7 @@ export async function POST(request: Request) {
               encodeEvent("meta", {
                 conversationId: conversation.id,
                 citations,
+                ...responseMeta,
                 provider,
                 model: modelUsed,
               })
@@ -232,6 +212,7 @@ export async function POST(request: Request) {
                 route_latency_ms: Date.now() - startedAt,
                 mode: body.mode,
                 intent: orchResult.intent,
+                selected_document_count: body.selectedDocumentIds.length,
               },
             });
 
@@ -241,6 +222,7 @@ export async function POST(request: Request) {
                 messageId: assistantMessage?.id,
                 answer,
                 citations,
+                ...responseMeta,
                 provider,
                 model: modelUsed,
               })
@@ -324,6 +306,7 @@ export async function POST(request: Request) {
                   messageId: assistantMessage?.id,
                   answer: fallbackAnswer,
                   citations,
+                  ...responseMeta,
                   provider: fallback.provider,
                   model: fallback.model,
                 })
@@ -339,6 +322,7 @@ export async function POST(request: Request) {
                   error: "Tutor request failed.",
                   answer: errorText,
                   citations,
+                  ...responseMeta,
                 })
               );
             }

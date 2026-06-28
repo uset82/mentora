@@ -75,6 +75,8 @@ export function buildToolPrompt(
 ) {
   const language = locale === "es" ? "Spanish" : "English";
   const instructionByKind: Record<ToolKind, string> = {
+    summary:
+      "Create a clear study summary with the main idea, key concepts, examples, and a short checklist of what the student should remember.",
     quiz:
       "Create 8 exam-ready questions: 5 multiple-choice questions with answers and explanations, plus 3 short-answer questions with rubrics.",
     flashcards:
@@ -95,6 +97,16 @@ Source: [2]
 Keep each front concise, each back teachable, and each hint short.`,
     apa_summary:
       "Create a structured APA-style academic summary with thesis, key concepts, evidence, limitations, and a short references-from-uploaded-material note.",
+    mind_map:
+      "Create a concise mind map in Markdown. Use a central topic, 4 to 6 main branches, and short nested bullets for the relationships students should remember.",
+    data_table:
+      "Create a compact Markdown table that organizes the most important concepts, definitions, examples, and why each item matters for studying.",
+    study_guide:
+      "Create a practical study guide with learning objectives, a 25-minute review plan, priority concepts, practice prompts, and a final self-check.",
+    diagram:
+      "Create a Mermaid diagram for the most important process, relationship, or concept map in the source material, followed by a short legend with citation markers.",
+    infographic:
+      "Create a compact text-based infographic layout in Markdown with a title, 4 to 6 visual sections, key numbers or concepts, and a final study takeaway.",
   };
 
   return `Write in ${language}.

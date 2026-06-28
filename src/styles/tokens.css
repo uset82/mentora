@@ -1,0 +1,107 @@
+:root {
+  --mentora-canvas: #f6f9ff;
+  --mentora-canvas-2: #edf5ff;
+  --mentora-bg-grid: rgba(37, 99, 235, 0.045);
+  --mentora-bg-glow-blue: rgba(59, 130, 246, 0.14);
+  --mentora-bg-glow-violet: rgba(124, 58, 237, 0.1);
+
+  --mentora-surface: rgba(255, 255, 255, 0.82);
+  --mentora-surface-soft: rgba(255, 255, 255, 0.72);
+  --mentora-surface-strong: rgba(255, 255, 255, 0.94);
+  --mentora-border: rgba(148, 163, 184, 0.28);
+  --mentora-border-strong: rgba(37, 99, 235, 0.18);
+
+  --mentora-text: #07113d;
+  --mentora-copy: #17224a;
+  --mentora-muted: #64748b;
+  --mentora-primary: #2563eb;
+  --mentora-primary-2: #4f46e5;
+  --mentora-cyan: #06b6d4;
+  --mentora-violet: #7c3aed;
+  --mentora-blue: var(--mentora-primary);
+  --mentora-deep: var(--mentora-text);
+
+  --mentora-primary-gradient: linear-gradient(135deg, var(--mentora-primary-2), var(--mentora-primary));
+  --mentora-primary-gradient-hover: linear-gradient(135deg, #4338ca, #1d4ed8);
+  --mentora-glass-blur: 18px;
+  --mentora-glass-radius: 24px;
+  --mentora-card-radius: 20px;
+  --mentora-control-radius: 16px;
+  --mentora-glass-shadow: 0 24px 70px rgba(15, 23, 42, 0.1);
+  --mentora-card-shadow: 0 18px 48px rgba(42, 64, 128, 0.08);
+  --mentora-focus-ring: 0 0 0 4px rgba(37, 99, 235, 0.18);
+}
+
+.mentora-glass {
+  border: 1px solid var(--mentora-border);
+  border-radius: var(--mentora-glass-radius);
+  background: var(--mentora-surface);
+  box-shadow: var(--mentora-glass-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(var(--mentora-glass-blur)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--mentora-glass-blur)) saturate(150%);
+}
+
+.mentora-glass-strong {
+  border: 1px solid var(--mentora-border);
+  border-radius: var(--mentora-glass-radius);
+  background: var(--mentora-surface-strong);
+  box-shadow: var(--mentora-card-shadow);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+
+.mentora-action-card {
+  border: 1px solid rgba(37, 99, 235, 0.12);
+  border-radius: var(--mentora-card-radius);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 249, 255, 0.88));
+  box-shadow: var(--mentora-card-shadow);
+}
+
+.mentora-primary-button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-radius: var(--mentora-control-radius);
+  background: var(--mentora-primary-gradient);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 900;
+  box-shadow: 0 16px 34px rgba(37, 99, 235, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.38);
+  transition: transform 180ms var(--motion-snap), box-shadow 180ms ease, background 180ms ease;
+}
+
+.mentora-primary-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: var(--mentora-primary-gradient-hover);
+  box-shadow: 0 20px 42px rgba(37, 99, 235, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.mentora-primary-button:disabled {
+  cursor: not-allowed;
+  background: linear-gradient(135deg, #9db2ea, #7ea4e8);
+  box-shadow: none;
+}
+
+.mentora-focusable:focus-visible {
+  outline: 0;
+  box-shadow: var(--mentora-focus-ring);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .mentora-glass,
+  .mentora-glass-strong {
+    background: #ffffff;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@supports not ((backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px))) {
+  .mentora-glass,
+  .mentora-glass-strong {
+    background: #ffffff;
+  }
+}

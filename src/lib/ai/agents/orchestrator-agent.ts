@@ -8,6 +8,8 @@ export interface OrchestrationResult {
   intent: ChatIntent;
   citations: Citation[];
   contentStream?: string;
+  selectedSourceCount?: number;
+  selectedSourceNames?: string[];
   precomputedText?: string;
 }
 
@@ -72,6 +74,7 @@ export async function orchestrateChat({
   message,
   mode,
   locale,
+  selectedDocumentIds,
 }: {
   service: SupabaseClient;
   tenantId: string;
@@ -79,13 +82,16 @@ export async function orchestrateChat({
   message: string;
   mode: "fast" | "tutor" | "agent";
   locale: "es" | "en";
+  selectedDocumentIds?: string[];
 }): Promise<OrchestrationResult> {
   const documentQuestion = isDocumentQuestion(message);
+  const selectedIdSet = new Set(selectedDocumentIds ?? []);
+  const hasExplicitSelection = selectedIdSet.size > 0;
 
   // Fast Chat should stay fast for general messages, but questions that explicitly
   // mention the uploaded PDF/material should still use available document context.
-  if (mode === "fast" && !documentQuestion) {
-    return { intent: "general", citations: [] };
+  if (mode === "fast" && !documentQuestion && !hasExplicitSelection) {
+    return { intent: "general", citations: [], selectedSourceCount: 0, selectedSourceNames: [] };
   }
 
   // Retrieve space documents to verify status
@@ -95,19 +101,29 @@ export async function orchestrateChat({
     .eq("study_space_id", studySpaceId);
 
   const allDocuments = documents ?? [];
-  const readyDocuments = allDocuments.filter((d) => d.processing_status === "ready");
+  const scopedDocuments = hasExplicitSelection
+    ? allDocuments.filter((document) => selectedIdSet.has(document.id))
+    : [];
+  const readyDocuments = scopedDocuments.filter((d) => d.processing_status === "ready");
+  const selectedSourceNames = scopedDocuments.map((document) => String(document.file_name ?? "")).filter(Boolean);
+
+  if (!hasExplicitSelection) {
+    return { intent: "general", citations: [], selectedSourceCount: 0, selectedSourceNames: [] };
+  }
 
   // If the user asked about their PDF, do not let the general prompt claim there
   // is no uploaded material. Return the true document state instead.
   if (readyDocuments.length === 0) {
-    if (documentQuestion && allDocuments.length > 0) {
+    if (documentQuestion && scopedDocuments.length > 0) {
       return {
         intent: "rag_qa",
         citations: [],
+        selectedSourceCount: scopedDocuments.length,
+        selectedSourceNames,
         precomputedText: localizedMessage(
           locale,
-          "Tu PDF todavia se esta preparando. Cuando el estado cambie a Fuentes listas, podre responder sobre su contenido con citas. Mientras tanto puedes hacer preguntas generales.",
-          "Your PDF is still being prepared. Once it changes to Sources ready, I can answer about its content with citations. In the meantime, you can ask general questions.",
+          "Estoy preparando este material. Cuando este listo, podre responder sobre su contenido con citas. Mientras tanto puedes hacer preguntas generales.",
+          "I am preparing this material. Once it is ready, I can answer about its content with citations. In the meantime, you can ask general questions.",
         ),
       };
     }
@@ -116,15 +132,17 @@ export async function orchestrateChat({
       return {
         intent: "rag_qa",
         citations: [],
+        selectedSourceCount: scopedDocuments.length,
+        selectedSourceNames,
         precomputedText: localizedMessage(
           locale,
-          "No encuentro un PDF en este espacio de estudio. Sube un PDF primero y espera a que aparezca como fuente lista.",
-          "I cannot find a PDF in this study space. Upload a PDF first and wait until it appears as a ready source.",
+          "No encuentro material en este espacio de estudio. Usa + para subir material cuando quieras estudiar con tus apuntes.",
+          "I cannot find material in this study space. Use + to upload material when you want to study from your notes.",
         ),
       };
     }
 
-    return { intent: "general", citations: [] };
+    return { intent: "general", citations: [], selectedSourceCount: scopedDocuments.length, selectedSourceNames };
   }
 
   const intent = classifyIntent(message);
@@ -146,6 +164,8 @@ export async function orchestrateChat({
       return {
         intent: "summary",
         citations: (summaryArtifact.citations ?? []) as Citation[],
+        selectedSourceCount: readyDocuments.length,
+        selectedSourceNames,
         precomputedText: summaryArtifact.content,
       };
     }
@@ -172,6 +192,8 @@ export async function orchestrateChat({
       return {
         intent: "diagram",
         citations: [],
+        selectedSourceCount: readyDocuments.length,
+        selectedSourceNames,
         precomputedText: formattedResponse,
       };
     }
@@ -184,6 +206,7 @@ export async function orchestrateChat({
       tenantId,
       studySpaceId,
       query: message,
+      selectedDocumentIds: readyDocuments.map((document) => document.id),
     });
 
     // If retrieval failed even though ready documents exist, explain the retrieval issue
@@ -193,16 +216,18 @@ export async function orchestrateChat({
       return {
         intent: "rag_qa",
         citations: [],
+        selectedSourceCount: readyDocuments.length,
+        selectedSourceNames,
         precomputedText: localizedMessage(
           locale,
-          "Veo que hay un PDF listo, pero no pude recuperar fragmentos legibles para responder esta pregunta. Intenta reformularla o vuelve a subir un PDF con texto seleccionable.",
-          "I can see a ready PDF, but I could not retrieve readable excerpts for this question. Try rephrasing it or upload a text-based PDF.",
+          "Veo que hay material listo, pero no pude recuperar texto legible para responder esta pregunta. Intenta reformularla o sube un material con texto seleccionable.",
+          "I can see ready material, but I could not retrieve readable text for this question. Try rephrasing it or upload material with selectable text.",
         ),
       };
     }
 
-    return { intent: "rag_qa", citations };
+    return { intent: "rag_qa", citations, selectedSourceCount: readyDocuments.length, selectedSourceNames };
   }
 
-  return { intent: "general", citations: [] };
+  return { intent: "general", citations: [], selectedSourceCount: readyDocuments.length, selectedSourceNames };
 }

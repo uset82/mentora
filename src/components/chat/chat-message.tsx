@@ -59,7 +59,7 @@ export function ChatMessage({ message, t }: ChatMessageProps) {
 
       {message.citations && message.citations.length > 0 && (
         <div className="mt-4 border-t border-white/5 pt-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Citas y Fuentes:</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Citas y materiales:</p>
           <div className="flex flex-wrap gap-2">
             {message.citations.slice(0, 5).map((citation, index) => (
               <div 

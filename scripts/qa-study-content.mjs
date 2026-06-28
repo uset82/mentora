@@ -1,5 +1,23 @@
 import assert from "node:assert/strict";
-import { parseChatBlocks, parseFlashcards } from "../src/lib/study-content.ts";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import ts from "typescript";
+
+const sourcePath = resolve("src/lib/study-content.ts");
+const source = await readFile(sourcePath, "utf8");
+const compiled = ts.transpileModule(source, {
+  compilerOptions: {
+    module: ts.ModuleKind.ES2022,
+    target: ts.ScriptTarget.ES2022,
+  },
+});
+const tempDir = await mkdtemp(join(tmpdir(), "mentora-study-content-"));
+const compiledPath = join(tempDir, "study-content.mjs");
+await writeFile(compiledPath, compiled.outputText, "utf8");
+
+const { parseChatBlocks, parseFlashcards } = await import(pathToFileURL(compiledPath).href);
 
 const cards = parseFlashcards(`Flashcards generated
 

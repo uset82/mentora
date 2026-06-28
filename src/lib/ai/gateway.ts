@@ -3,7 +3,18 @@ import { generateText, streamText } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { assertServerEnv, env } from "@/lib/server-env";
 
-export type AITask = "tutor_chat" | "quiz" | "flashcards" | "apa_summary" | "audit";
+export type AITask =
+  | "tutor_chat"
+  | "summary"
+  | "quiz"
+  | "flashcards"
+  | "apa_summary"
+  | "mind_map"
+  | "data_table"
+  | "study_guide"
+  | "diagram"
+  | "infographic"
+  | "audit";
 export type AIPriority = "speed" | "quality" | "cost";
 
 export type AITextRequest = {

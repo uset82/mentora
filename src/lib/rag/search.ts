@@ -30,23 +30,25 @@ export async function retrieveCitations({
   studySpaceId,
   query,
   limit = SAFETY_LIMITS.MAX_CITATIONS_PER_ANSWER,
+  selectedDocumentIds,
 }: {
   service: SupabaseClient;
   tenantId: string;
   studySpaceId: string;
   query: string;
   limit?: number;
+  selectedDocumentIds?: string[];
 }): Promise<Citation[]> {
   try {
     return await withTimeout(
-      doRetrieveCitations({ service, tenantId, studySpaceId, query, limit }),
+      doRetrieveCitations({ service, tenantId, studySpaceId, query, limit, selectedDocumentIds }),
       SAFETY_LIMITS.RAG_RETRIEVAL_TIMEOUT
     );
   } catch (error) {
     console.warn("[Mentora] RAG retrieval timed out or failed:", error);
     try {
       return await withTimeout(
-        retrieveRecentReadyChunks({ service, tenantId, studySpaceId, limit }),
+        retrieveRecentReadyChunks({ service, tenantId, studySpaceId, limit, selectedDocumentIds }),
         Math.min(1500, SAFETY_LIMITS.RAG_RETRIEVAL_TIMEOUT)
       );
     } catch (fallbackError) {
@@ -62,26 +64,30 @@ async function doRetrieveCitations({
   studySpaceId,
   query,
   limit,
+  selectedDocumentIds,
 }: {
   service: SupabaseClient;
   tenantId: string;
   studySpaceId: string;
   query: string;
   limit: number;
+  selectedDocumentIds?: string[];
 }): Promise<Citation[]> {
   const [embedding] = await embedTexts([query]);
   const { data, error } = await service.rpc("match_document_chunks", {
     query_embedding: embedding,
     match_tenant_id: tenantId,
     match_study_space_id: studySpaceId,
-    match_count: limit,
+    match_count: selectedDocumentIds?.length ? Math.max(limit * 6, limit) : limit,
   });
 
   if (error) {
     throw error;
   }
 
+  const selectedIdSet = new Set(selectedDocumentIds ?? []);
   const semanticMatches = ((data ?? []) as MatchRow[])
+    .filter((row) => selectedIdSet.size === 0 || selectedIdSet.has(row.document_id))
     .filter((row) => row.similarity >= 0.12)
     .map(rowToCitation)
     .slice(0, limit);
@@ -90,7 +96,7 @@ async function doRetrieveCitations({
     return semanticMatches;
   }
 
-  return retrieveRecentReadyChunks({ service, tenantId, studySpaceId, limit });
+  return retrieveRecentReadyChunks({ service, tenantId, studySpaceId, limit, selectedDocumentIds });
 }
 
 function rowToCitation(row: MatchRow): Citation {
@@ -108,18 +114,26 @@ async function retrieveRecentReadyChunks({
   tenantId,
   studySpaceId,
   limit,
+  selectedDocumentIds,
 }: {
   service: SupabaseClient;
   tenantId: string;
   studySpaceId: string;
   limit: number;
+  selectedDocumentIds?: string[];
 }): Promise<Citation[]> {
-  const { data: documents, error: documentError } = await service
+  let documentQuery = service
     .from("documents")
     .select("id, file_name")
     .eq("tenant_id", tenantId)
     .eq("study_space_id", studySpaceId)
-    .eq("processing_status", "ready")
+    .eq("processing_status", "ready");
+
+  if (selectedDocumentIds?.length) {
+    documentQuery = documentQuery.in("id", selectedDocumentIds);
+  }
+
+  const { data: documents, error: documentError } = await documentQuery
     .order("created_at", { ascending: false })
     .limit(3);
 

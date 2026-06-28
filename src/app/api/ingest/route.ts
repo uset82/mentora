@@ -107,6 +107,8 @@ export async function POST(request: Request) {
         user_id: profile.id,
         file_name: file.name,
         storage_path: storagePath,
+        material_type: "pdf",
+        mime_type: "application/pdf",
         processing_status: "pending",
         metadata: {
           byte_size: file.size,
@@ -177,7 +179,15 @@ async function ensureDocumentsBucket(service: SupabaseClient, maxBytes: number) 
   }
 
   const { error: createError } = await service.storage.createBucket(DOCUMENTS_BUCKET, {
-    allowedMimeTypes: ["application/pdf"],
+    allowedMimeTypes: [
+      "application/pdf",
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+      "text/plain",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ],
     fileSizeLimit: maxBytes,
     public: false,
   });

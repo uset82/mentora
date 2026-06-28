@@ -11,6 +11,7 @@ import {
   ClipboardList,
   Clock3,
   Globe2,
+  Table2,
   HelpCircle,
   FileSearch,
   Eye,
@@ -26,8 +27,6 @@ import {
   Loader2,
   LogOut,
   MessageSquareText,
-  PanelRightOpen,
-  Plus,
   Settings2,
   ShieldCheck,
   Sparkles,
@@ -38,16 +37,17 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, FormEvent, ReactNode } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/browser";
 import { copy } from "@/lib/i18n";
 import { parseFlashcards } from "@/lib/study-content";
-import type { DocumentRecord, GeneratedArtifact, LearningProfile, Locale, Profile, StudySpace, ToolKind } from "@/lib/types";
+import type { DocumentRecord, GeneratedArtifact, LearningProfile, Locale, MaterialType, Profile, StudyNote, StudySpace, ToolKind } from "@/lib/types";
 import { ChatMessage as ChatMessageComponent } from "./chat/chat-message";
 import { ChatInput as ChatInputComponent } from "./chat/chat-input";
 import { ChatModeBadge } from "./chat/chat-mode-badge";
 import { MarkdownMessage } from "./chat/markdown-message";
+import { StudyWorkspace } from "./study-workspace/study-workspace";
 
 type ChatMessage = {
   id?: string;
@@ -217,7 +217,7 @@ function updateBirthLocationDraft(draft: LearningProfileDraft, patch: Partial<Pi
   };
 }
 
-const toolKinds: ToolKind[] = ["quiz", "flashcards", "apa_summary"];
+const toolKinds: ToolKind[] = ["summary", "quiz", "flashcards", "apa_summary", "mind_map", "data_table", "study_guide", "diagram", "infographic"];
 const CHAT_TIMEOUT_MS = 75_000;
 const AVATAR_CANVAS_SIZE = 320;
 
@@ -257,17 +257,15 @@ function readAvatarFile(file: File) {
 }
 
 const toolMeta: Record<ToolKind, { icon: ReactNode }> = {
+  summary: { icon: <BookOpen size={18} /> },
   quiz: { icon: <ClipboardList size={18} /> },
   flashcards: { icon: <Layers3 size={18} /> },
   apa_summary: { icon: <FileText size={18} /> },
-};
-
-const viewIcons: Record<AppView, ReactNode> = {
-  home: <BookOpen size={18} />,
-  tutor: <MessageSquareText size={18} />,
-  documents: <FolderOpen size={18} />,
-  tools: <WandSparkles size={18} />,
-  profile: <UserRound size={18} />,
+  mind_map: { icon: <BrainCircuit size={18} /> },
+  data_table: { icon: <Table2 size={18} /> },
+  study_guide: { icon: <BookOpen size={18} /> },
+  diagram: { icon: <BrainCircuit size={18} /> },
+  infographic: { icon: <Sparkles size={18} /> },
 };
 
 type LandingVisual = "sources" | "tutor" | "tools" | "profile";
@@ -312,8 +310,7 @@ function landingCapabilities(t: Record<string, string>) {
 }
 
 function reportClientError(context: string, error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  console.warn(`[Mentora] ${context}: ${message}`);
+  console.warn(`[Mentora] ${context}:`, error);
 }
 
 function resolveAuthErrorMessage(
@@ -368,9 +365,61 @@ async function autoSignInDev(client: SupabaseClient, skipRef?: { current: boolea
     return;
   }
   try {
-    const { error } = await client.auth.signInWithPassword({ email, password });
-    if (error) {
-      reportClientError("Dev auto sign-in failed", error);
+    // Ensure dev user exists + is email-confirmed using the service role (bypasses confirmation requirement)
+    // and get fresh tokens so we can set the session directly (more reliable than signInWithPassword + listener in some cases)
+    let gotDirectSession = false;
+    try {
+      const res = await fetch("/api/dev/ensure-dev-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (payload?.session?.access_token && payload?.session?.refresh_token) {
+        await client.auth.setSession({
+          access_token: payload.session.access_token,
+          refresh_token: payload.session.refresh_token,
+        });
+        gotDirectSession = true;
+      }
+    } catch {
+      // non-fatal, fall through to sign in
+    }
+
+    if (gotDirectSession) {
+      if (process.env.NEXT_PUBLIC_MENTORA_DEV_AUTOLOGIN === "true") {
+        setTimeout(() => { window.location.reload(); }, 150);
+      }
+      return;
+    }
+
+    const { error: signInError } = await client.auth.signInWithPassword({ email, password });
+    if (!signInError) {
+      return;
+    }
+
+    // Fallback client-side signup
+    const msg = String(signInError.message ?? "").toLowerCase();
+    if (msg.includes("invalid login credentials") || msg.includes("user not found")) {
+      const { error: signUpError } = await client.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { full_name: "Dev User", tenant_name: "Dev Workspace" },
+        },
+      });
+      if (signUpError) {
+        if (!String(signUpError.message ?? "").toLowerCase().includes("already")) {
+          reportClientError("Dev auto sign-up failed", signUpError);
+        }
+      } else {
+        const { error: retryError } = await client.auth.signInWithPassword({ email, password });
+        if (retryError && !String(retryError.message ?? "").toLowerCase().includes("invalid login")) {
+          reportClientError("Dev auto sign-in after signup", retryError);
+        }
+      }
+    } else {
+      reportClientError("Dev auto sign-in failed", signInError);
     }
   } catch (caught) {
     reportClientError("Dev auto sign-in failed", caught);
@@ -412,6 +461,7 @@ export function MentoraApp() {
   const [spaces, setSpaces] = useState<StudySpace[]>([]);
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [artifacts, setArtifacts] = useState<GeneratedArtifact[]>([]);
+  const [notes, setNotes] = useState<StudyNote[]>([]);
   const [activeSpaceId, setActiveSpaceId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<AppView>("home");
   const [busy, setBusy] = useState<string | null>(null);
@@ -441,6 +491,8 @@ export function MentoraApp() {
 
     let workspaceResult: unknown[];
 
+    const isDevAuto = process.env.NEXT_PUBLIC_MENTORA_DEV_AUTOLOGIN === "true";
+
     try {
       workspaceResult = await Promise.all([
         client.from("profiles").select("id, tenant_id, email, full_name, role, learning_profile").single(),
@@ -451,31 +503,36 @@ export function MentoraApp() {
           .select("id, study_space_id, kind, title, content, citations, created_at")
           .order("created_at", { ascending: false }),
         client
+          .from("notes")
+          .select("id, study_space_id, title, content, selected_document_ids, created_at, updated_at")
+          .order("updated_at", { ascending: false }),
+        client
           .from("document_processing_jobs")
           .select("document_id, status, current_step, error_message")
           .in("status", ["pending", "processing"]),
       ]);
     } catch (caught) {
       reportClientError("Workspace network request failed", caught);
-      setError(t.authNetworkError);
-      // A stale/invalid session often surfaces here. Force a clean re-auth.
-      try {
-        await client.auth.signOut();
-      } catch {
-        // ignore
+      if (!isDevAuto) {
+        setError(t.authNetworkError);
+        try {
+          await client.auth.signOut();
+        } catch {}
+        setSession(null);
+        void autoSignInDev(client, manualSignOutRef);
       }
-      setSession(null);
-      void autoSignInDev(client, manualSignOutRef);
       return;
     }
 
     const [
-      { data: profileRow, error: profileError },
+      { data: rawProfile, error: profileError },
       { data: spaceRows, error: spaceError },
-      { data: documentRows },
-      { data: artifactRows },
-      { data: jobRows },
+      { data: documentRows, error: documentsError },
+      { data: artifactRows, error: artifactsError },
+      { data: noteRows, error: notesError },
+      { data: jobRows, error: jobsError },
     ] = workspaceResult as [
+      { data: unknown; error: unknown },
       { data: unknown; error: unknown },
       { data: unknown; error: unknown },
       { data: unknown; error: unknown },
@@ -483,22 +540,47 @@ export function MentoraApp() {
       { data: unknown; error: unknown },
     ];
 
+    let profileRow = rawProfile;
     if (profileError) {
       reportClientError("Profile load failed", profileError);
-      setError(t.workspaceLoadError);
-      return;
+      if (isDevAuto) {
+        // Dev stub so we don't get stuck behind auth panel when grants/RLS are not fully set for anon
+        profileRow = {
+          id: "dev-stub",
+          tenant_id: "dev-tenant",
+          email: "carlo.dev@mentora.local",
+          full_name: "Dev User",
+          role: "student",
+          learning_profile: { onboardingComplete: true },
+        };
+      } else {
+        setError(t.workspaceLoadError);
+        return;
+      }
     }
 
+    let loadedSpaceRows = spaceRows;
     if (spaceError) {
       reportClientError("Study space load failed", spaceError);
-      setError(t.workspaceLoadError);
-      return;
+      if (isDevAuto) {
+        loadedSpaceRows = [];
+      } else {
+        setError(t.workspaceLoadError);
+        return;
+      }
+    }
+
+    if (isDevAuto && (documentsError || artifactsError || notesError || jobsError)) {
+      if (documentsError) reportClientError("Documents load failed (dev)", documentsError);
+      if (artifactsError) reportClientError("Artifacts load failed (dev)", artifactsError);
+      if (notesError) reportClientError("Notes load failed (dev)", notesError);
+      if (jobsError) reportClientError("Jobs load failed (dev)", jobsError);
     }
 
     const loadedProfile = profileRow as Profile;
     const learningProfile = loadedProfile.learning_profile ?? {};
     const birthLocation = parseBirthLocation(learningProfile);
-    const loadedSpaces = (spaceRows ?? []) as StudySpace[];
+    const loadedSpaces = (loadedSpaceRows ?? []) as StudySpace[];
     const nextActiveSpaceId = activeSpaceId ?? loadedSpaces[0]?.id ?? null;
     let loadedMessages: ChatMessage[] = [];
 
@@ -575,6 +657,7 @@ export function MentoraApp() {
 
     setDocuments(documentsWithJobs);
     setArtifacts((artifactRows ?? []) as GeneratedArtifact[]);
+    setNotes((noteRows ?? []) as StudyNote[]);
     setMessages(loadedMessages);
 
     if (!activeSpaceId && nextActiveSpaceId) {
@@ -620,14 +703,21 @@ export function MentoraApp() {
           return;
         }
         if (userError) {
+          // In dev auto-login mode, be more lenient — the auto login will recover anyway
+          const isDevAuto = process.env.NEXT_PUBLIC_MENTORA_DEV_AUTOLOGIN === "true";
           reportClientError("Session validation failed", userError);
-          try {
-            await supabase.auth.signOut();
-          } catch {
-            // ignore
+          if (!isDevAuto) {
+            try {
+              await supabase.auth.signOut();
+            } catch {
+              // ignore
+            }
+            setSession(null);
+            await autoSignInDev(supabase, manualSignOutRef);
+            return;
           }
-          setSession(null);
-          await autoSignInDev(supabase, manualSignOutRef);
+          // For dev: still set the session from getSession and let auto recover or queries fail gracefully
+          setSession(data.session);
           return;
         }
         setSession(data.session);
@@ -710,6 +800,10 @@ export function MentoraApp() {
   const activeArtifacts = useMemo(
     () => artifacts.filter((artifact) => !activeSpace || artifact.study_space_id === activeSpace.id),
     [activeSpace, artifacts],
+  );
+  const activeNotes = useMemo(
+    () => notes.filter((note) => !activeSpace || note.study_space_id === activeSpace.id),
+    [activeSpace, notes],
   );
   const activeDocuments = useMemo(
     () => documents.filter((document) => !activeSpace || document.study_space_id === activeSpace.id),
@@ -817,34 +911,39 @@ export function MentoraApp() {
       </AnimatePresence>
 
       <div className="liquid-app-grid is-focus">
-        <NavigationRail
-          activeSpace={activeSpace}
-          activeView={activeView}
-          busy={busy}
-          documents={activeDocuments}
-          onCreate={(name) => createStudySpace(name)}
-          onSelectSpace={setActiveSpaceId}
-          onSelectView={setActiveView}
-          onSignOut={handleManualSignOut}
-          profile={profile}
-          spaces={spaces}
-          t={t}
-        />
-
         <section className="liquid-main-scroll">
           <section className="liquid-content-panel">
             <div className="min-h-0 flex-1 overflow-visible px-3 pb-5 sm:px-5 sm:pb-6">
               <AnimatePresence mode="wait">
                 {activeView === "home" && (
                   <MotionView key="home">
-                    <RealStudentDashboard
+                    <StudyWorkspace
                       activeDocuments={activeDocuments}
-                      artifacts={activeArtifacts}
+                      activeArtifacts={activeArtifacts}
+                      activeNotes={activeNotes}
+                      activeSpace={activeSpace}
                       busy={busy}
-                      onSelectView={setActiveView}
+                      error={error}
+                      messages={messages}
+                      onAddLink={uploadLink}
+                      onCreateSpace={(name) => createStudySpace(name)}
+                      onCreateNote={saveStudyNote}
+                      onDeleteNote={deleteStudyNote}
+                      onGenerate={(kind, selectedDocumentIds) => {
+                        if (activeSpace) {
+                          void generateTool(activeSpace.id, kind, selectedDocumentIds);
+                        }
+                      }}
+                      onOpenProfile={() => setActiveView("profile")}
+                      onOpenProgress={() => setError(locale === "es" ? "Progreso estara disponible cuando haya datos reales de estudio." : "Progress will be available when real study data exists.")}
+                      onSelectSpace={setActiveSpaceId}
+                      onSend={sendTutorMessage}
+                      onSignOut={handleManualSignOut}
+                      onUpdateNote={updateStudyNote}
                       onUpload={uploadDocument}
                       profile={profile}
                       readyDocuments={readyDocuments}
+                      spaces={spaces}
                       t={t}
                     />
                   </MotionView>
@@ -853,6 +952,7 @@ export function MentoraApp() {
                 {activeView === "tutor" && (
                   <MotionView key="tutor">
                     <TutorStudio
+                      activeDocuments={activeDocuments}
                       busy={busy}
                       disabled={busy === "chat"}
                       loading={busy === "chat"}
@@ -860,6 +960,8 @@ export function MentoraApp() {
                       models={models}
                       openRouterConnected={openRouterConnected}
                       openRouterServerConnected={openRouterServerConnected}
+                      onAddLink={uploadLink}
+                      onCreateNote={createNoteMaterial}
                       onSelectModel={handleModelSelect}
                       onSend={sendTutorMessage}
                       onUpload={uploadDocument}
@@ -878,6 +980,8 @@ export function MentoraApp() {
                     <DocumentStudio
                       activeDocuments={activeDocuments}
                       busy={busy}
+                      onPractice={() => setActiveView("tools")}
+                      onTutor={() => setActiveView("tutor")}
                       onUpload={uploadDocument}
                       t={t}
                     />
@@ -896,6 +1000,7 @@ export function MentoraApp() {
                       openRouterServerConnected={openRouterServerConnected}
                       onGenerate={(kind) => activeSpace && generateTool(activeSpace.id, kind)}
                       onSelectModel={handleModelSelect}
+                      onTutor={() => setActiveView("tutor")}
                       onUpload={uploadDocument}
                       selectedModel={selectedModel}
                       t={t}
@@ -905,17 +1010,43 @@ export function MentoraApp() {
 
                 {activeView === "profile" && (
                   <MotionView key="profile">
-                    <ProfileStudio
-                      busy={busy}
-                      draft={profileDraft}
-                      locale={locale}
-                      onChange={setProfileDraft}
-                      onError={setError}
-                      onSaveLearning={() => saveProfile({ requireLearning: true, requirePersonal: false })}
-                      onSaveProfile={() => saveProfile({ requireLearning: false, requirePersonal: true })}
-                      profile={profile}
-                      t={t}
-                    />
+                    <div className="grid h-full min-h-0 gap-3">
+                      <header className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-[0_14px_42px_rgba(15,23,42,0.06)]">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <button
+                            className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs font-bold text-slate-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                            onClick={() => setActiveView("home")}
+                            type="button"
+                          >
+                            <BookOpen size={15} />
+                            Estudio
+                          </button>
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-bold uppercase tracking-wide text-blue-700">Perfil</p>
+                            <h1 className="truncate text-base font-bold leading-tight text-slate-950 sm:text-lg">{profile?.full_name ?? t.student}</h1>
+                          </div>
+                        </div>
+                        <button
+                          className="flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 px-2.5 text-xs font-bold text-rose-700 transition hover:bg-rose-50"
+                          onClick={handleManualSignOut}
+                          type="button"
+                        >
+                          <LogOut size={15} />
+                          <span className="hidden sm:inline">{t.signOut}</span>
+                        </button>
+                      </header>
+                      <ProfileStudio
+                        busy={busy}
+                        draft={profileDraft}
+                        locale={locale}
+                        onChange={setProfileDraft}
+                        onError={setError}
+                        onSaveLearning={() => saveProfile({ requireLearning: true, requirePersonal: false })}
+                        onSaveProfile={() => saveProfile({ requireLearning: false, requirePersonal: true })}
+                        profile={profile}
+                        t={t}
+                      />
+                    </div>
                   </MotionView>
                 )}
               </AnimatePresence>
@@ -1027,23 +1158,159 @@ export function MentoraApp() {
     return createdSpace?.id ?? null;
   }
 
-  async function sendTutorMessage(message: string) {
+  async function sendTutorMessage(message: string, selectedDocumentIds: string[] = []) {
     const studySpaceId = activeSpace?.id ?? (await createStudySpace(t.personalWorkspace));
     if (!studySpaceId) {
       return;
     }
 
-    await askTutor(studySpaceId, message);
+    await askTutor(studySpaceId, message, selectedDocumentIds);
   }
 
-  async function uploadDocument(file: File) {
+  async function uploadDocument(file: File, materialType: MaterialType = "pdf") {
     const studySpaceId = activeSpace?.id ?? (await createStudySpace(t.personalWorkspace));
 
     if (!studySpaceId) {
-      return;
+      return false;
     }
 
-    await uploadPdf(studySpaceId, file);
+    return uploadMaterial({ file, materialType, studySpaceId });
+  }
+
+  async function uploadLink(url: string) {
+    const studySpaceId = activeSpace?.id ?? (await createStudySpace(t.personalWorkspace));
+
+    if (!studySpaceId) {
+      return false;
+    }
+
+    return uploadMaterial({ materialType: "link", studySpaceId, url });
+  }
+
+  async function createNoteMaterial(text: string) {
+    const studySpaceId = activeSpace?.id ?? (await createStudySpace(t.personalWorkspace));
+
+    if (!studySpaceId) {
+      return false;
+    }
+
+    return uploadMaterial({ materialType: "text", studySpaceId, text });
+  }
+
+  async function saveStudyNote(text: string, selectedDocumentIds: string[] = []) {
+    if (!supabase) {
+      return false;
+    }
+
+    const studySpaceId = activeSpace?.id ?? (await createStudySpace(t.personalWorkspace));
+    if (!studySpaceId) {
+      return false;
+    }
+
+    setBusy("note");
+    setError(null);
+    const token = await getAccessToken(supabase);
+    if (!token) {
+      setBusy(null);
+      setError(t.authError);
+      return false;
+    }
+
+    try {
+      const response = await fetch("/api/notes", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          studySpaceId,
+          content: text,
+          selectedDocumentIds,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { note?: StudyNote; error?: string };
+      if (!response.ok || !payload.note) {
+        setError(payload.error ?? "No se pudo guardar la nota.");
+        return false;
+      }
+      setNotes((current) => [payload.note as StudyNote, ...current]);
+      return true;
+    } catch (caught) {
+      reportClientError("Note save failed", caught);
+      setError(t.authNetworkError);
+      return false;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function updateStudyNote(noteId: string, patch: { title?: string; content?: string }) {
+    if (!supabase) {
+      return false;
+    }
+
+    const token = await getAccessToken(supabase);
+    if (!token) {
+      setError(t.authError);
+      return false;
+    }
+
+    try {
+      const response = await fetch("/api/notes", {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: noteId, ...patch }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { note?: StudyNote; error?: string };
+      if (!response.ok || !payload.note) {
+        setError(payload.error ?? "No se pudo actualizar la nota.");
+        return false;
+      }
+      setNotes((current) => current.map((note) => (note.id === noteId ? payload.note as StudyNote : note)));
+      return true;
+    } catch (caught) {
+      reportClientError("Note update failed", caught);
+      setError(t.authNetworkError);
+      return false;
+    }
+  }
+
+  async function deleteStudyNote(noteId: string) {
+    if (!supabase) {
+      return false;
+    }
+
+    const token = await getAccessToken(supabase);
+    if (!token) {
+      setError(t.authError);
+      return false;
+    }
+
+    try {
+      const response = await fetch("/api/notes", {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: noteId }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        setError(payload.error ?? "No se pudo eliminar la nota.");
+        return false;
+      }
+      setNotes((current) => current.filter((note) => note.id !== noteId));
+      return true;
+    } catch (caught) {
+      reportClientError("Note delete failed", caught);
+      setError(t.authNetworkError);
+      return false;
+    }
   }
 
   function handleModelSelect(modelId: string) {
@@ -1105,39 +1372,60 @@ export function MentoraApp() {
     return model && !model.isFree && openRouterConnected ? openRouterApiKey : undefined;
   }
 
-  async function uploadPdf(studySpaceId: string, file: File) {
+  async function uploadMaterial(input: {
+    file?: File;
+    materialType: MaterialType;
+    studySpaceId: string;
+    text?: string;
+    url?: string;
+  }) {
     if (!supabase) {
-      return;
+      return false;
     }
 
+    const materialLabel = input.file?.name ?? input.url ?? t.createNote;
     setBusy("upload");
     setError(null);
-    setUploadNotice(`${t.processingFile} ${file.name}`);
+    setUploadNotice(`${t.processingFile} ${materialLabel.slice(0, 80)}`);
     const token = await getAccessToken(supabase);
     if (!token) {
       setBusy(null);
       setUploadNotice(null);
       setError(t.authError);
-      return;
+      return false;
     }
 
-    const formData = new FormData();
-    formData.append("studySpaceId", studySpaceId);
-    formData.append("file", file);
+    const isFileUpload = Boolean(input.file);
+    const body = isFileUpload
+      ? (() => {
+          const formData = new FormData();
+          formData.append("studySpaceId", input.studySpaceId);
+          formData.append("materialType", input.materialType);
+          formData.append("file", input.file as File);
+          return formData;
+        })()
+      : JSON.stringify({
+          studySpaceId: input.studySpaceId,
+          materialType: input.materialType,
+          text: input.text,
+          url: input.url,
+        });
 
     let response: Response;
     try {
-      response = await fetch("/api/ingest", {
+      response = await fetch("/api/materials", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
+        headers: isFileUpload
+          ? { Authorization: `Bearer ${token}` }
+          : { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body,
       });
     } catch (caught) {
-      reportClientError("Document upload request failed", caught);
+      reportClientError("Material upload request failed", caught);
       setBusy(null);
       setUploadNotice(null);
       setError(t.authNetworkError);
-      return;
+      return false;
     }
 
     const payload = (await response.json().catch(() => ({}))) as { error?: string };
@@ -1145,16 +1433,17 @@ export function MentoraApp() {
     setUploadNotice(null);
     if (!response.ok) {
       setError(payload.error ?? "Upload failed.");
-      return;
+      return false;
     }
 
-    setUploadNotice(`${file.name} ${t.uploadReadyNotice}`);
+    setUploadNotice(`${materialLabel.slice(0, 80)} ${t.uploadReadyNotice}`);
     await loadWorkspace();
-    setActiveView("tutor");
+    setActiveView("home");
     window.setTimeout(() => setUploadNotice(null), 6000);
+    return true;
   }
 
-  async function askTutor(studySpaceId: string, message: string) {
+  async function askTutor(studySpaceId: string, message: string, selectedDocumentIds: string[] = []) {
     if (!supabase) {
       return;
     }
@@ -1197,6 +1486,7 @@ export function MentoraApp() {
           model: selectedModel,
           openRouterApiKey: selectedOpenRouterApiKey(),
           mode: selectedMode,
+          selectedDocumentIds,
         }),
         signal: chatController.signal,
       });
@@ -1328,7 +1618,7 @@ export function MentoraApp() {
     }
   }
 
-  async function generateTool(studySpaceId: string, kind: ToolKind) {
+  async function generateTool(studySpaceId: string, kind: ToolKind, selectedDocumentIds: string[] = []) {
     if (!supabase) {
       return;
     }
@@ -1348,6 +1638,7 @@ export function MentoraApp() {
         locale,
         model: selectedModel,
         openRouterApiKey: selectedOpenRouterApiKey(),
+        selectedDocumentIds,
       }),
     });
     const payload = await response.json();
@@ -1436,6 +1727,64 @@ function AuthScreen({
   const [tenantName, setTenantName] = useState("Personal Mentora");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  const devAutoLogin = process.env.NEXT_PUBLIC_MENTORA_DEV_AUTOLOGIN === "true";
+  const devEmail = process.env.NEXT_PUBLIC_MENTORA_DEV_EMAIL || "";
+  const devPassword = process.env.NEXT_PUBLIC_MENTORA_DEV_PASSWORD || "";
+  const devAutoLoginAttempted = useRef(false);
+
+  function fillDevCredentials() {
+    if (devEmail) setEmail(devEmail);
+    if (devPassword) setPassword(devPassword);
+    if (mode !== "signin") setMode("signin");
+  }
+
+  async function devSignInNow() {
+    if (devAutoLogin && devEmail) {
+      try {
+        const res = await fetch("/api/dev/ensure-dev-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: devEmail, password: devPassword }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (payload?.session?.access_token && payload?.session?.refresh_token) {
+          await supabase?.auth.setSession({
+            access_token: payload.session.access_token,
+            refresh_token: payload.session.refresh_token,
+          });
+          if (devAutoLogin) {
+            setTimeout(() => { window.location.reload(); }, 150);
+          }
+          return;
+        }
+      } catch {
+        // ignore — fall back to normal sign in flow
+      }
+    }
+    fillDevCredentials();
+    // small delay for state + submit
+    setTimeout(() => {
+      void submit();
+    }, 30);
+  }
+
+  // In dev with auto-login enabled, automatically attempt dev sign-in as soon as the auth panel is shown
+  useEffect(() => {
+    if (devAutoLoginAttempted.current || !devAutoLogin || !devEmail || busy) {
+      return;
+    }
+
+    devAutoLoginAttempted.current = true;
+    // Small delay to let the UI settle and avoid double attempts with the top-level autoSignInDev
+    const timeout = setTimeout(() => {
+      void devSignInNow();
+    }, 150);
+
+    return () => clearTimeout(timeout);
+    // This dev-only auto-login is intentionally one-shot; devSignInNow reads the latest form helpers through this render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, devAutoLogin, devEmail]);
 
   async function submit() {
     if (!supabase) {
@@ -1590,6 +1939,26 @@ function AuthScreen({
             </button>
           </div>
           <div className="space-y-3">
+            {devAutoLogin && devEmail && (
+              <div className="rounded-lg border border-emerald-400/40 bg-emerald-950/40 px-3 py-2 text-xs text-emerald-200">
+                Dev mode: <span className="font-mono">{devEmail}</span>
+                <button
+                  type="button"
+                  className="ml-2 rounded border border-emerald-400/50 px-2 py-0.5 hover:bg-emerald-900/50"
+                  onClick={devSignInNow}
+                >
+                  Sign in as dev now
+                </button>
+                <button
+                  type="button"
+                  className="ml-1 rounded border border-emerald-400/30 px-1.5 py-0.5 text-[10px] hover:bg-emerald-900/40"
+                  onClick={fillDevCredentials}
+                >
+                  Fill only
+                </button>
+                <div className="mt-1 text-[10px] opacity-70">Still blocked? Disable &quot;Confirm email&quot; in Supabase → Authentication → Providers → Email.</div>
+              </div>
+            )}
             {mode === "signup" && (
               <>
                 <TextField label={t.fullName} value={fullName} onChange={setFullName} />
@@ -1664,12 +2033,12 @@ function HeroProductMockup({ t }: { t: Record<string, string> }) {
         </div>
         <div className="hero-laptop-grid">
           <aside>
-            {["Resumen", "Fuentes", "Tutor", "Practica"].map((item, index) => (
+            {["Inicio", "Materiales", "Tutor IA", "Practica"].map((item, index) => (
               <span key={item} className={index === 2 ? "is-active" : ""}>{item}</span>
             ))}
           </aside>
           <main>
-            <h3>¡Hola, María! 👋</h3>
+            <h3>Hola, Maria</h3>
             <p>{t.landingLaptopSubtitle}</p>
             <div className="hero-search-bar">{t.landingAskPlaceholder}<ChevronRight size={16} /></div>
             <div className="hero-mini-stats">
@@ -1678,7 +2047,7 @@ function HeroProductMockup({ t }: { t: Record<string, string> }) {
               <span><strong>5</strong>{t.quiz}</span>
             </div>
             <div className="hero-material-list">
-              {["Fisiología Humana.pdf", "Apuntes Clase 8.docx", "Presentación.pptx", "Video - Teorías.mp4"].map((item) => (
+              {["Fisiologia Humana.pdf", "Apuntes Clase 8.pdf", "Lectura Obligatoria.pdf", "Banco de preguntas.pdf"].map((item) => (
                 <span key={item}>{item}<small>{t.ready}</small></span>
               ))}
             </div>
@@ -1688,7 +2057,7 @@ function HeroProductMockup({ t }: { t: Record<string, string> }) {
       <div className="floating-upload-card">
         <Upload size={28} />
         <strong>{t.landingUploadMini}</strong>
-        <small>PDF, PPTX, DOCX, MP4, enlaces...</small>
+        <small>PDFs con texto</small>
       </div>
       <div className="floating-chat-card">
         <strong>{t.tutor}</strong>
@@ -1943,131 +2312,13 @@ function PasswordRecoveryScreen({
   );
 }
 
-function NavigationRail({
-  activeSpace,
-  activeView,
-  busy,
-  documents,
-  onCreate,
-  onSelectSpace,
-  onSelectView,
-  onSignOut,
-  profile,
-  spaces,
-  t,
-}: {
-  activeSpace: StudySpace | null;
-  activeView: AppView;
-  busy: string | null;
-  documents: DocumentRecord[];
-  onCreate: (name: string) => Promise<string | null>;
-  onSelectSpace: (id: string) => void;
-  onSelectView: (view: AppView) => void;
-  onSignOut: () => void;
-  profile: Profile | null;
-  spaces: StudySpace[];
-  t: Record<string, string>;
-}) {
-  const readyCount = documents.filter((document) => document.processing_status === "ready").length;
-  const navItems: Array<{ id: Exclude<AppView, "profile">; label: string; detail: string; badge?: string }> = [
-    { id: "home", label: t.home, detail: t.homeNav },
-    { id: "documents", label: t.myMaterials, detail: t.sourceLibrary, badge: documents.length.toString() },
-    { id: "tutor", label: t.aiTutor, detail: readyCount > 0 ? t.sourcesReady : t.waitingForSources, badge: readyCount > 0 ? readyCount.toString() : undefined },
-    { id: "tools", label: t.studyTools, detail: t.toolsNav },
-  ];
-  const initials = (profile?.full_name ?? profile?.email ?? "M").slice(0, 2).toUpperCase();
-  const isProfileActive = activeView === "profile";
-  const activeSpaceDetail = activeSpace ? `${documents.length} ${t.sources}` : "";
-
-  return (
-    <aside className="liquid-nav" aria-label="Student navigation">
-      <div className="liquid-nav-inner">
-        <div className="liquid-nav-logo">
-          <MentoraLogo onClick={() => onSignOut()} />
-        </div>
-
-        <button
-          aria-current={isProfileActive ? "page" : undefined}
-          className={`liquid-profile-chip ${isProfileActive ? "is-active" : ""}`}
-          onClick={() => onSelectView("profile")}
-          title={`${t.settings} - ${profile?.full_name ?? profile?.email ?? t.student}`}
-          type="button"
-        >
-          <span className="liquid-avatar">{initials}</span>
-          <span className="liquid-profile-copy">
-            <strong>{profile?.full_name ?? profile?.email ?? t.student}</strong>
-            <small>{t.student}</small>
-          </span>
-          <ChevronRight size={15} />
-        </button>
-
-        <nav className="liquid-nav-tabs" aria-label="Workspace sections">
-          {navItems.map((item) => {
-            const isActive = activeView === item.id;
-            return (
-              <button
-                key={item.id}
-                aria-current={isActive ? "page" : undefined}
-                className={`liquid-tab ${isActive ? "is-active" : ""}`}
-                onClick={() => onSelectView(item.id)}
-                title={`${item.label} - ${item.detail}`}
-                type="button"
-              >
-                <span className="liquid-tab-icon">{viewIcons[item.id]}</span>
-                <span className="liquid-tab-copy">
-                  <strong>{item.label}</strong>
-                  <small>{item.detail}</small>
-                </span>
-                {item.badge && <span className="liquid-tab-badge">{item.badge}</span>}
-              </button>
-            );
-          })}
-        </nav>
-
-        {activeSpace && (
-          <section className="liquid-space-card is-compact" aria-label={t.currentSpace}>
-            <span className="liquid-space-icon" aria-hidden="true">
-              <BookOpen size={15} />
-            </span>
-            <div>
-              <strong>{activeSpace.name}</strong>
-              {activeSpaceDetail && <small>{activeSpaceDetail}</small>}
-            </div>
-            <CreateSpaceButton busy={busy === "space"} label={t.newSpace} onCreate={onCreate} t={t} />
-          </section>
-        )}
-
-        {spaces.length > 0 && (
-          <div className="liquid-space-list" aria-label={t.spaces}>
-            {spaces.slice(0, 4).map((space) => (
-              <button
-                key={space.id}
-                className={`liquid-space-option ${activeSpace?.id === space.id ? "is-active" : ""}`}
-                onClick={() => onSelectSpace(space.id)}
-                type="button"
-              >
-                <BookOpen size={16} />
-                <span>{space.name}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div className="liquid-nav-footer">
-          <button className="liquid-signout" onClick={onSignOut} type="button">
-            <LogOut size={16} />
-            <span>{t.signOut}</span>
-          </button>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
 function RealStudentDashboard({
   activeDocuments,
   artifacts,
   busy,
+  onAddLink,
+  onAsk,
+  onCreateNote,
   onSelectView,
   onUpload,
   profile,
@@ -2077,8 +2328,11 @@ function RealStudentDashboard({
   activeDocuments: DocumentRecord[];
   artifacts: GeneratedArtifact[];
   busy: string | null;
+  onAddLink: (url: string) => Promise<boolean> | boolean;
+  onAsk: (message: string) => void;
+  onCreateNote: (text: string) => Promise<boolean> | boolean;
   onSelectView: (view: AppView) => void;
-  onUpload: (file: File) => void;
+  onUpload: (file: File, materialType: MaterialType) => Promise<boolean> | boolean;
   profile: Profile | null;
   readyDocuments: DocumentRecord[];
   t: Record<string, string>;
@@ -2086,32 +2340,28 @@ function RealStudentDashboard({
   const firstName = (profile?.full_name ?? t.student).split(" ")[0] || t.student;
   const materials = activeDocuments.slice(0, 4);
   const processingDocuments = activeDocuments.filter((document) =>
-    ["pending", "processing"].includes(document.processing_status),
+    document.processing_status !== "ready" && document.processing_status !== "failed",
   );
-  const readiness = activeDocuments.length > 0 ? Math.round((readyDocuments.length / activeDocuments.length) * 100) : 0;
   const nextStudyAction:
-    | { kind: "upload"; title: string; label: string; detail: string; icon: ReactNode }
-    | { kind: "view"; title: string; label: string; detail: string; icon: ReactNode; view: AppView } =
+    | { title: string; label: string; detail: string; icon: ReactNode; view: AppView } =
     activeDocuments.length === 0
       ? {
-          kind: "upload",
-          title: t.uploadFirstSource,
-          label: t.uploadPdf,
+          title: t.studentNextNewTitle,
+          label: t.openTutor,
           detail: t.emptyLibraryText,
-          icon: <Upload size={18} />,
+          icon: <MessageSquareText size={18} />,
+          view: "tutor",
         }
       : readyDocuments.length === 0
         ? {
-            kind: "view",
             title: t.sourcesProcessingTitle,
             label: t.viewSourceStatus,
-            detail: processingDocuments.length > 0 ? `${processingDocuments.length} ${t.processing}` : t.buildingIndex,
+            detail: t.materialPreparingText,
             icon: <Clock3 size={18} />,
             view: "documents",
           }
         : artifacts.length > 0
           ? {
-              kind: "view",
               title: t.continuePractice,
               label: t.continuePractice,
               detail: `${artifacts.length} ${t.items} ${t.generated}`,
@@ -2119,144 +2369,76 @@ function RealStudentDashboard({
               view: "tools",
             }
           : {
-              kind: "view",
               title: t.askTutorCta,
               label: t.askTutorCta,
               detail: t.readyToStudy,
               icon: <MessageSquareText size={18} />,
               view: "tutor",
             };
-  const cockpitStats = [
-    { label: t.ready, value: readyDocuments.length.toString() },
-    { label: t.processing, value: processingDocuments.length.toString() },
-    { label: t.generated, value: artifacts.length.toString() },
-  ];
-  const studyPath = [
-    {
-      id: "upload",
-      title: t.myMaterials,
-      detail: activeDocuments.length === 0 ? t.emptyLibraryTitle : `${readyDocuments.length}/${activeDocuments.length} ${t.sourcesReady}`,
-      icon: <Upload size={17} />,
-      status: activeDocuments.length === 0 ? t.pending : readyDocuments.length > 0 ? t.ready : t.processing,
-    },
-    {
-      id: "review",
-      title: t.aiTutor,
-      detail: readyDocuments.length > 0 ? t.tutorStatusReady : t.tutorStatusNoSources,
-      icon: <MessageSquareText size={17} />,
-      status: readyDocuments.length > 0 ? t.ready : t.waitingForSources,
-    },
-    {
-      id: "tools",
-      title: t.studyTools,
-      detail: artifacts.length > 0 ? `${artifacts.length} ${t.items}` : t.practicePreviewText,
-      icon: <Sparkles size={17} />,
-      status: readyDocuments.length > 0 ? t.ready : t.waitingForSources,
-    },
-  ];
-  const setupFlow = [
-    { label: t.setupStepSpace, icon: <BookOpen size={14} /> },
-    { label: t.setupStepSource, icon: <FileText size={14} /> },
-    { label: t.setupStepStudy, icon: <BrainCircuit size={14} /> },
-  ];
+  const heroText =
+    activeDocuments.length === 0
+      ? t.studentHomeNewText
+      : processingDocuments.length > 0 && readyDocuments.length === 0
+        ? t.materialPreparingText
+        : artifacts.length > 0
+          ? t.studentHomePracticeText
+          : t.studentHomeReadyText;
 
   return (
-    <div className="liquid-dashboard cockpit-dashboard">
-      <section className="liquid-hero-card cockpit-hero-card">
-        <div className="cockpit-hero-orb" aria-hidden="true" />
-        <div className="liquid-hero-copy cockpit-hero-copy">
-          <span className="liquid-kicker"><BrainCircuit size={16} /> {t.studyPulse}</span>
-          <h2>{t.dashboard}, {firstName}</h2>
-          <p>{t.dashboardWelcome}</p>
-          <div className="cockpit-signal-strip" aria-label={t.learningPulse}>
-            {cockpitStats.map((stat) => (
-              <span key={stat.label}>
-                <strong>{stat.value}</strong>
-                <small>{stat.label}</small>
-              </span>
-            ))}
+    <div className="student-home">
+      <section className="student-home-top">
+        <article className="student-home-hero-panel">
+          <span className="student-home-kicker"><GraduationCap size={16} /> {t.studentWorkspace}</span>
+          <h1>{t.homeGreeting}, {firstName}</h1>
+          <p>{heroText}</p>
+          <div className="student-command-card">
+            <ChatInputComponent
+              buttonLabel={t.send}
+              disabled={busy === "chat"}
+              loading={busy === "chat"}
+              onAddLink={onAddLink}
+              onCreateNote={onCreateNote}
+              onSend={onAsk}
+              onUpload={onUpload}
+              placeholder={t.dashboardAskPlaceholder}
+              uploadDisabled={busy === "upload"}
+              uploadLoading={busy === "upload"}
+            />
           </div>
-        </div>
-        <aside className="liquid-next-panel cockpit-next-panel" aria-label={t.recommendedSessions}>
-          <div className="cockpit-next-marker" aria-hidden="true" />
+        </article>
+        <aside className="student-next-action-panel" aria-label={t.recommendedSessions}>
           <span>{t.recommendedSessions}</span>
-          <strong>{nextStudyAction.title}</strong>
+          <h2>{nextStudyAction.title}</h2>
           <p>{nextStudyAction.detail}</p>
-          {activeDocuments.length === 0 && (
-            <div className="cockpit-setup-flow" aria-label={t.emptyWorkspaceFlow}>
-              <div>
-                {setupFlow.map((step, index) => (
-                  <span key={step.label}>
-                    {step.icon}
-                    {step.label}
-                    {index < setupFlow.length - 1 && <ChevronRight size={12} />}
-                  </span>
-                ))}
-              </div>
-              <small>{t.emptyWorkspaceFlow}</small>
-            </div>
-          )}
-          <div className="cockpit-next-footer">
-            <div
-              className="liquid-readiness-ring"
-              aria-label={`${t.readiness} ${readiness}%`}
-              style={{ "--readiness": `${readiness}%` } as React.CSSProperties}
-            >
-              <b>{readiness}%</b>
-            </div>
-            {nextStudyAction.kind === "upload" ? (
-              <UploadControl disabled={busy === "upload"} highlight loading={busy === "upload"} label={nextStudyAction.label} onUpload={onUpload} />
-            ) : (
-              <button onClick={() => onSelectView(nextStudyAction.view)} type="button">
-                {nextStudyAction.icon}
-                {nextStudyAction.label}
-                <ArrowUpRight size={16} />
-              </button>
-            )}
+          <div className="student-next-action-footer">
+            <button onClick={() => onSelectView(nextStudyAction.view)} type="button">
+              {nextStudyAction.icon}
+              {nextStudyAction.label}
+              <ArrowUpRight size={16} />
+            </button>
           </div>
         </aside>
       </section>
 
-      <section className={`liquid-dashboard-grid cockpit-grid ${materials.length === 0 ? "is-compact" : ""}`}>
-        <article className="liquid-card cockpit-plan-card">
+      {materials.length > 0 && (
+      <section className="student-workflow-grid is-simple">
+        <article className="student-library-panel">
           <header>
-            <span><Clock3 size={17} /> {t.studyPathTitle}</span>
+            <span><FileText size={17} /> {t.recentMaterials}</span>
+            <button onClick={() => onSelectView("documents")} type="button">{t.openSources}</button>
           </header>
-          <div className="cockpit-path-list">
-            {studyPath.map((item, index) => (
-              <div key={item.id} className="cockpit-path-step">
-                <span>{index + 1}</span>
-                <div>
-                  <strong>{item.title}</strong>
-                  <small>{item.detail}</small>
-                </div>
-                <em>{item.status}</em>
-                {item.icon}
-              </div>
+          <div className="student-material-list">
+            {materials.map((document, index) => (
+              <button key={document.id} onClick={() => onSelectView("documents")} type="button">
+                <span className={`material-thumb material-thumb-${index % 4}`} />
+                <span>{document.file_name}</span>
+                <small>{studentStatusLabel(document.processing_status, t)}</small>
+              </button>
             ))}
           </div>
         </article>
-
-        {materials.length > 0 && (
-          <article className="liquid-card cockpit-materials-card">
-            <header>
-              <span><FileText size={17} /> {t.recentMaterials}</span>
-              {nextStudyAction.kind !== "view" || nextStudyAction.view !== "documents" ? (
-                <button onClick={() => onSelectView("documents")} type="button">{t.openSources}</button>
-              ) : null}
-            </header>
-            <div className="liquid-list cockpit-material-list">
-              {materials.map((document, index) => (
-                <button key={document.id} onClick={() => onSelectView("documents")} type="button">
-                  <span className={`material-thumb material-thumb-${index % 4}`} />
-                  <span>{document.file_name}</span>
-                  <small>{document.processing_status === "ready" ? t.ready : t.processing}</small>
-                </button>
-              ))}
-            </div>
-          </article>
-        )}
       </section>
+      )}
     </div>
   );
 }
@@ -2294,6 +2476,7 @@ function ChatModeSelector({
 }
 
 function TutorStudio({
+  activeDocuments,
   busy,
   disabled,
   loading,
@@ -2301,6 +2484,8 @@ function TutorStudio({
   models,
   openRouterConnected,
   openRouterServerConnected,
+  onAddLink,
+  onCreateNote,
   onSelectModel,
   onSend,
   onUpload,
@@ -2311,6 +2496,7 @@ function TutorStudio({
   t,
   locale,
 }: {
+  activeDocuments: DocumentRecord[];
   busy: string | null;
   disabled: boolean;
   loading: boolean;
@@ -2318,9 +2504,11 @@ function TutorStudio({
   models: ModelOption[];
   openRouterConnected: boolean;
   openRouterServerConnected: boolean;
+  onAddLink: (url: string) => Promise<boolean> | boolean;
+  onCreateNote: (text: string) => Promise<boolean> | boolean;
   onSelectModel: (modelId: string) => void;
   onSend: (message: string) => void;
-  onUpload: (file: File) => void;
+  onUpload: (file: File, materialType: MaterialType) => Promise<boolean> | boolean;
   readyDocuments: DocumentRecord[];
   selectedModel: string;
   selectedMode: "fast" | "tutor" | "agent";
@@ -2328,10 +2516,20 @@ function TutorStudio({
   t: Record<string, string>;
   locale: "es" | "en";
 }) {
-  const needsSources = readyDocuments.length === 0;
+  const preparingCount = activeDocuments.filter(
+    (document) => document.processing_status !== "ready" && document.processing_status !== "failed",
+  ).length;
+  const materialChip =
+    activeDocuments.length === 0
+      ? t.noReadyDocs
+      : preparingCount > 0 && readyDocuments.length === 0
+        ? t.waitingForSources
+        : readyDocuments.length === 1
+          ? t.oneMaterial
+          : `${readyDocuments.length} ${t.materialsLower}`;
 
   return (
-    <div className="student-tutor-workspace">
+    <div className="student-tutor-workspace is-chat-first">
       <section className="student-chat-panel">
         <div className="student-chat-header flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -2351,7 +2549,7 @@ function TutorStudio({
           <div className="student-chat-actions tutor-chat-actions">
             <span className={`status-pill ${readyDocuments.length > 0 ? "is-ready" : "is-muted"}`}>
               <span className="h-2 w-2 rounded-full bg-current" />
-              {readyDocuments.length > 0 ? t.sourcesReady : t.waitingForSources}
+              {materialChip}
             </span>
             <details className="tutor-settings-panel">
               <summary>
@@ -2383,8 +2581,8 @@ function TutorStudio({
             {messages.length === 0 ? (
               <EmptyState
                 icon={<BrainCircuit size={30} />}
-                title={t.askFirstQuestion}
-                text={t.askFirstQuestionText}
+                title={t.tutorEmptyTitle}
+                text={t.tutorEmptyText}
               />
             ) : (
               <div className="space-y-4">
@@ -2401,40 +2599,14 @@ function TutorStudio({
           loading={loading}
           placeholder={t.ask}
           buttonLabel={t.send}
+          onAddLink={onAddLink}
+          onCreateNote={onCreateNote}
           onSend={onSend}
+          onUpload={onUpload}
+          uploadDisabled={busy === "upload"}
+          uploadLoading={busy === "upload"}
         />
       </section>
-
-      <aside className="student-context-panel">
-        <div className="student-context-title">
-          <PanelRightOpen size={17} />
-          {t.liveContext}
-        </div>
-        <div className="space-y-3">
-          {readyDocuments.slice(0, 5).map((document) => (
-            <DocumentMini key={document.id} document={document} t={t} />
-          ))}
-          {readyDocuments.length === 0 && (
-            <div className="tutor-source-empty">
-              <EmptyState compact icon={<FileText size={18} />} title={t.noReadyDocs} text={t.noReadyDocsText} />
-              <UploadControl
-                disabled={busy === "upload"}
-                highlight={needsSources}
-                loading={busy === "upload"}
-                label={t.uploadPdf}
-                onUpload={onUpload}
-                wide
-              />
-            </div>
-          )}
-          {busy === "chat" && (
-            <div className="rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-3 text-sm text-cyan-100">
-              <Loader2 className="mr-2 inline animate-spin" size={16} />
-              {t.tutorThinking}
-            </div>
-          )}
-        </div>
-      </aside>
     </div>
   );
 }
@@ -2442,63 +2614,58 @@ function TutorStudio({
 function DocumentStudio({
   activeDocuments,
   busy,
+  onPractice,
+  onTutor,
   onUpload,
   t,
 }: {
   activeDocuments: DocumentRecord[];
   busy: string | null;
-  onUpload: (file: File) => void;
+  onPractice: () => void;
+  onTutor: () => void;
+  onUpload: (file: File, materialType?: MaterialType) => void;
   t: Record<string, string>;
 }) {
   return (
-    <div className="miro-studio-grid h-full min-h-[560px] gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
-      <section className="upload-dropzone miro-side-panel">
-        <div className="brand-mark h-12 w-12">
-          {busy === "upload" ? <Loader2 className="animate-spin" size={22} /> : <Upload size={22} />}
+    <section className="materials-workspace">
+      <header className="materials-header">
+        <div>
+          <span className="student-section-kicker"><FolderOpen size={16} /> {t.myMaterials}</span>
+          <h2>{t.documentsTitle}</h2>
         </div>
-        <span className="miro-panel-kicker">{t.documents}</span>
-        <h2 className="mt-4 text-2xl font-semibold text-white">{t.uploadLibrary}</h2>
-        <p className="mt-3 text-sm leading-6 text-slate-300">{t.uploadLibraryText}</p>
-        <div className="miro-upload-orbit" aria-hidden="true">
-          <span>{t.uploadPdf}</span>
-          <span>{t.sourceLibrary}</span>
-          <span>{t.sourcesReady}</span>
-        </div>
-        <p className="rounded-2xl border border-cyan-300/20 bg-cyan-300/10 p-3 text-xs leading-5 text-cyan-100">
-          {t.uploadStartsAutomatically}
-        </p>
         <UploadControl
           disabled={busy === "upload"}
           loading={busy === "upload"}
-          label={t.uploadPdf}
-          onUpload={onUpload}
-          wide
+          label={t.uploadLibrary}
+          onUpload={(file) => onUpload(file, "pdf")}
         />
-      </section>
+      </header>
 
-      <section className="source-library-panel rounded-3xl border border-white/10 bg-slate-950/55 p-4">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-white">{t.sourceLibrary}</h2>
-            <p className="mt-1 text-sm text-slate-400">{t.sourceLibraryText}</p>
-          </div>
-          <span className="status-pill is-muted">{activeDocuments.length} {t.sources}</span>
+      {activeDocuments.length > 0 ? (
+        <div className="materials-grid">
+          {activeDocuments.map((document) => (
+            <DocumentCard
+              key={document.id}
+              document={document}
+              onPractice={onPractice}
+              onTutor={onTutor}
+              t={t}
+            />
+          ))}
         </div>
-
-        <div className="panel-scroll-shell">
-          <div className="panel-scroll-area grid gap-3 md:grid-cols-2">
-            {activeDocuments.map((document) => (
-              <DocumentCard key={document.id} document={document} t={t} />
-            ))}
-            {activeDocuments.length === 0 && (
-              <div className="md:col-span-2">
-                <EmptyState icon={<FileText size={28} />} title={t.emptyLibraryTitle} text={t.emptyLibraryText} />
-              </div>
-            )}
-          </div>
+      ) : (
+        <div className="materials-empty">
+          <EmptyState icon={<FileText size={28} />} title={t.emptyLibraryTitle} text={t.emptyLibraryText} />
+          <UploadControl
+            disabled={busy === "upload"}
+            highlight
+            loading={busy === "upload"}
+            label={t.uploadLibrary}
+            onUpload={(file) => onUpload(file, "pdf")}
+          />
         </div>
-      </section>
-    </div>
+      )}
+    </section>
   );
 }
 
@@ -2512,6 +2679,7 @@ function ToolStudio({
   openRouterServerConnected,
   onGenerate,
   onSelectModel,
+  onTutor,
   onUpload,
   selectedModel,
   t,
@@ -2525,63 +2693,55 @@ function ToolStudio({
   openRouterServerConnected: boolean;
   onGenerate: (kind: ToolKind) => void;
   onSelectModel: (modelId: string) => void;
-  onUpload: (file: File) => void;
+  onTutor: () => void;
+  onUpload: (file: File, materialType?: MaterialType) => void;
   selectedModel: string;
   t: Record<string, string>;
 }) {
-  const [selectedKind, setSelectedKind] = useState<ToolKind>("quiz");
-  const selectedBusy = busy === selectedKind;
-
   return (
     <div className="practice-studio-grid h-full min-h-[560px] gap-4">
       <section className="practice-generator-panel">
         <header>
           <span><WandSparkles size={16} /> {t.studyTools}</span>
           <h2>{t.toolsTitle}</h2>
-          {hasReadySources && <p>{t.practicePreviewText}</p>}
+          <p>{hasReadySources ? t.practicePreviewText : t.toolsNeedSources}</p>
         </header>
 
-        {hasReadySources ? (
-          <>
-            <div className="practice-segmented" role="tablist" aria-label={t.studyTools}>
-              {toolKinds.map((kind) => {
-                const isSelected = selectedKind === kind;
-                return (
-                  <button
-                    key={kind}
-                    aria-selected={isSelected}
-                    className={isSelected ? "is-selected" : ""}
-                    onClick={() => setSelectedKind(kind)}
-                    role="tab"
-                    type="button"
-                  >
-                    {toolMeta[kind].icon}
-                    <span>{t[kind]}</span>
-                  </button>
-                );
-              })}
-            </div>
+        <div className="practice-tool-grid">
+          {toolKinds.map((kind) => {
+            const selectedBusy = busy === kind;
+            const disabled = !hasReadySources || !activeSpace || selectedBusy;
+            return (
+              <article key={kind} className={`practice-tool-card ${disabled ? "is-disabled" : ""}`}>
+                <span>{selectedBusy ? <Loader2 className="animate-spin" size={20} /> : toolMeta[kind].icon}</span>
+                <div>
+                  <strong>{t[kind]}</strong>
+                  <p>{t[`${kind}Description`]}</p>
+                  {!hasReadySources && <small>{t.practiceToolLocked}</small>}
+                </div>
+                <button disabled={disabled} onClick={() => onGenerate(kind)} type="button">
+                  {selectedBusy ? <Loader2 className="animate-spin" size={17} /> : <Sparkles size={17} />}
+                  {t.generate}
+                </button>
+              </article>
+            );
+          })}
+        </div>
 
-            <div className="practice-selected-card">
-              <span>{selectedBusy ? <Loader2 className="animate-spin" size={20} /> : toolMeta[selectedKind].icon}</span>
-              <div>
-                <strong>{t[selectedKind]}</strong>
-                <p>{t[`${selectedKind}Description`]}</p>
-              </div>
-              <button
-                disabled={!activeSpace || selectedBusy}
-                onClick={() => onGenerate(selectedKind)}
-                type="button"
-              >
-                {selectedBusy ? <Loader2 className="animate-spin" size={17} /> : <Sparkles size={17} />}
-                {t.generate}
-              </button>
-            </div>
-          </>
-        ) : (
-          <div className="practice-source-needed">
-            <EmptyState compact icon={<FileText size={18} />} title={t.noSourcesTitle} text={t.toolsNeedSources} />
-            <UploadControl disabled={busy === "upload"} highlight loading={busy === "upload"} label={t.uploadPdf} onUpload={onUpload} wide />
+        {!hasReadySources && (
+          <div className="practice-empty-actions">
+            <UploadControl
+              disabled={busy === "upload"}
+              highlight
+              loading={busy === "upload"}
+              label={t.uploadLibrary}
+              onUpload={(file) => onUpload(file, "pdf")}
+              wide
+            />
+            <button className="secondary-button h-11 justify-center" onClick={onTutor} type="button">
+              <MessageSquareText size={16} />
+              {t.openTutor}
+            </button>
           </div>
         )}
 
@@ -2602,11 +2762,11 @@ function ToolStudio({
         </details>
       </section>
 
-      <section className="generated-panel min-h-0 rounded-3xl border border-white/10 bg-slate-950/55 p-4">
+      <section className="generated-panel mentora-glass-strong min-h-0 p-4">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-white">{t.generatedOutput}</h2>
-            <p className="mt-1 text-sm text-slate-400">{t.generatedOutputText}</p>
+            <h2 className="text-lg font-semibold text-[var(--mentora-text)]">{t.generatedOutput}</h2>
+            <p className="mt-1 text-sm text-[var(--mentora-muted)]">{t.generatedOutputText}</p>
           </div>
           <span className="status-pill is-ready">{activeArtifacts.length} {t.items}</span>
         </div>
@@ -2964,8 +3124,8 @@ function ProfileStudio({
   }
 
   return (
-    <div className="miro-studio-grid h-full min-h-[560px] gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
-      <section className="profile-hero-card rounded-3xl border border-white/10 bg-gradient-to-br from-white/[0.08] to-cyan-300/[0.04] p-5">
+    <div className="mentora-studio-grid h-full min-h-[560px] gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+      <section className="profile-hero-card mentora-glass-strong p-5">
         <div className="profile-avatar-stack">
           <div className="profile-avatar-frame" aria-label={t.avatar}>
             {draft.avatarUrl ? (
@@ -2988,8 +3148,8 @@ function ProfileStudio({
             )}
           </div>
         </div>
-        <h2 className="mt-5 text-2xl font-semibold text-white">{profile?.full_name ?? t.student}</h2>
-        <p className="mt-2 break-words text-sm text-slate-300">{profile?.email}</p>
+        <h2 className="mt-5 text-2xl font-semibold text-[var(--mentora-text)]">{profile?.full_name ?? t.student}</h2>
+        <p className="mt-2 break-words text-sm text-[var(--mentora-muted)]">{profile?.email}</p>
         <div className="mt-6 grid gap-3">
           <ProfileFact label={t.birthDate} value={draft.birthDate || t.notSet} />
           <ProfileFact label={t.birthPlace} value={displayBirthPlace} />
@@ -2997,10 +3157,10 @@ function ProfileStudio({
         </div>
       </section>
 
-      <section className="profile-settings-card rounded-3xl border border-white/10 bg-slate-950/55 p-4 sm:p-5">
+      <section className="profile-settings-card mentora-glass-strong p-4 sm:p-5">
         <div className="mb-5">
-          <h2 className="text-lg font-semibold text-white">{t.profileSettings}</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-400">{t.profileSettingsText}</p>
+          <h2 className="text-lg font-semibold text-[var(--mentora-text)]">{t.profileSettings}</h2>
+          <p className="mt-1 text-sm leading-6 text-[var(--mentora-muted)]">{t.profileSettingsText}</p>
         </div>
 
         <div className="profile-settings-stack">
@@ -3172,7 +3332,7 @@ function TextField({
   const inputType = isPassword && showPassword ? "text" : type;
 
   return (
-    <label className="block text-sm font-medium text-slate-300">
+    <label className="mentora-field-label">
       <span className="mb-2 block">{label}</span>
       <span className="relative block">
         <input
@@ -3189,7 +3349,7 @@ function TextField({
         {isPassword && (
           <button
             aria-label={showPassword ? t?.hidePassword ?? "Hide password" : t?.showPassword ?? "Show password"}
-            className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full text-slate-500 transition-[transform,background-color,color] hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
+            className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full text-slate-500 transition-[transform,background-color,color] hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-300"
             onClick={() => setShowPassword((current) => !current)}
             type="button"
           >
@@ -3215,7 +3375,7 @@ function SelectInputField({
   placeholder: string;
 }) {
   return (
-    <label className="block text-sm font-medium text-slate-300">
+    <label className="mentora-field-label">
       <span className="mb-2 block">{label}</span>
       <span className="relative block">
         <select
@@ -3258,7 +3418,7 @@ function SelectField({
 }) {
   return (
     <div className="profile-select-group">
-      <label className="block text-sm font-medium text-slate-300">
+      <label className="mentora-field-label">
         <span className="mb-2 flex items-center gap-2">
           {icon && <span className="profile-select-icon">{icon}</span>}
           {label}
@@ -3309,118 +3469,6 @@ function Feature({ icon, text }: { icon: ReactNode; text: string }) {
   );
 }
 
-function CreateSpaceButton({
-  busy,
-  label,
-  onCreate,
-  t,
-}: {
-  busy: boolean;
-  label: string;
-  onCreate: (name: string) => Promise<string | null>;
-  t: Record<string, string>;
-}) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [localError, setLocalError] = useState<string | null>(null);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      setLocalError(t.spaceNameRequired);
-      return;
-    }
-
-    setLocalError(null);
-    const created = await onCreate(trimmedName);
-    if (created) {
-      setName("");
-      setOpen(false);
-    }
-  }
-
-  return (
-    <div className="space-creator-shell relative">
-      <button
-        aria-expanded={open}
-        className="space-creator-trigger inline-flex h-8 items-center gap-1.5 rounded-full bg-cyan-300 px-3 text-xs font-bold text-slate-950 transition-[transform,background-color,opacity] hover:bg-cyan-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-200 disabled:opacity-60"
-        disabled={busy}
-        onClick={() => setOpen((current) => !current)}
-        type="button"
-      >
-        {busy ? <Loader2 className="animate-spin" size={14} /> : <Plus size={14} />}
-        <span className="space-creator-trigger-label hidden sm:inline lg:hidden 2xl:inline">{label}</span>
-      </button>
-
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            animate={{ opacity: 1 }}
-            className="space-creator-backdrop"
-            exit={{ opacity: 0 }}
-            initial={{ opacity: 0 }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                setOpen(false);
-                setLocalError(null);
-              }
-            }}
-            onMouseDown={(event) => {
-              if (event.currentTarget === event.target) {
-                setOpen(false);
-                setLocalError(null);
-              }
-            }}
-            transition={{ duration: 0.15, ease: "easeOut" }}
-          >
-            <motion.form
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              aria-label={label}
-              aria-modal="true"
-              className="space-creator-popover"
-              exit={{ opacity: 0, y: -8, scale: 0.98 }}
-              initial={{ opacity: 0, y: 10, scale: 0.98 }}
-              onSubmit={submit}
-              role="dialog"
-              transition={{ duration: 0.2, ease: "easeOut" }}
-            >
-              <label className="block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                {label}
-                <input
-                  autoFocus
-                  className="text-input mt-2 h-11"
-                  maxLength={80}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder={t.newSpacePlaceholder}
-                  value={name}
-                />
-              </label>
-              {localError && <p className="mt-2 text-xs font-medium text-rose-600">{localError}</p>}
-              <div className="mt-4 flex justify-end gap-2">
-                <button
-                  className="secondary-button h-10 px-4 text-xs"
-                  onClick={() => {
-                    setOpen(false);
-                    setLocalError(null);
-                  }}
-                  type="button"
-                >
-                  {t.cancel}
-                </button>
-                <button className="primary-button h-10 px-4 text-xs" disabled={busy} type="submit">
-                  {busy ? <Loader2 className="animate-spin" size={14} /> : <Plus size={14} />}
-                  {t.create}
-                </button>
-              </div>
-            </motion.form>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
 function UploadControl({
   disabled,
   highlight = false,
@@ -3437,7 +3485,7 @@ function UploadControl({
   wide?: boolean;
 }) {
   return (
-    <label className={`upload-button ${wide ? "w-full justify-center" : ""} ${highlight ? "is-priority" : ""}`}>
+    <label className={`mentora-upload-button ${wide ? "w-full justify-center" : ""} ${highlight ? "is-priority" : ""}`}>
       {loading ? <Loader2 className="animate-spin" size={17} /> : <Upload size={17} />}
       {label}
       <input
@@ -3613,11 +3661,11 @@ function EmptyState({
 }) {
   return (
     <div className={`empty-state ${compact ? "is-compact" : ""}`}>
-      <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.06] text-cyan-100">
+      <div className="mentora-empty-icon">
         {icon}
       </div>
-      <p className="font-semibold text-white">{title}</p>
-      <p className="mt-1 max-w-md text-sm leading-6 text-slate-400">{text}</p>
+      <p className="mentora-empty-title">{title}</p>
+      <p className="mentora-empty-text">{text}</p>
     </div>
   );
 }
@@ -3653,41 +3701,47 @@ function Notice({
 
 // Legacy chat components removed in favor of modular components in src/components/chat/
 
-function DocumentCard({ document, t }: { document: DocumentRecord; t: Record<string, string> }) {
+function DocumentCard({
+  document,
+  onPractice,
+  onTutor,
+  t,
+}: {
+  document: DocumentRecord;
+  onPractice?: () => void;
+  onTutor?: () => void;
+  t: Record<string, string>;
+}) {
+  const type = document.material_type ?? "pdf";
+
   return (
     <article className="document-card">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-white">{document.file_name}</p>
-          <p className="mt-1 text-xs text-slate-400">{formatDate(document.created_at)}</p>
+        <span className="document-type-icon">
+          {materialTypeIcon(type)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-[var(--mentora-text)]">{document.file_name}</p>
+          <p className="mt-1 text-xs text-[var(--mentora-muted)]">{formatDate(document.created_at)}</p>
         </div>
         <StatusBadge status={document.processing_status} t={t} />
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-slate-400">
-        <ProfileFact label={t.chunks} value={String(document.metadata.chunk_count ?? "0")} compact />
-        <ProfileFact label={t.status} value={t[document.processing_status] ?? document.processing_status} compact />
-      </div>
       {document.error_message && (
-        <p className="mt-3 rounded-xl border border-red-300/20 bg-red-400/10 p-2 text-xs leading-5 text-red-100">
+        <p className="mt-3 rounded-xl border border-red-200 bg-red-50 p-2 text-xs leading-5 text-red-700">
           {document.error_message}
         </p>
       )}
+      <div className="document-card-actions">
+        <button onClick={onTutor} type="button">
+          <MessageSquareText size={15} />
+          {t.askTutorCta}
+        </button>
+        <button disabled={document.processing_status !== "ready"} onClick={onPractice} type="button">
+          <WandSparkles size={15} />
+          {t.createPractice}
+        </button>
+      </div>
     </article>
-  );
-}
-
-function DocumentMini({ document, t }: { document: DocumentRecord; t: Record<string, string> }) {
-  return (
-    <div className="mini-row">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/8 text-cyan-100">
-        <FileText size={16} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold text-white">{document.file_name}</span>
-        <span className="block truncate text-xs text-slate-400">{t[document.processing_status] ?? document.processing_status}</span>
-      </span>
-      <StatusDot status={document.processing_status} />
-    </div>
   );
 }
 
@@ -3696,10 +3750,10 @@ function ArtifactCard({ artifact, t }: { artifact: GeneratedArtifact; t: Record<
     <article className="artifact-card">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-bold uppercase text-cyan-200">{t[artifact.kind] ?? artifact.kind}</p>
-          <h3 className="mt-1 text-base font-semibold text-white">{artifact.title}</h3>
+          <p className="text-xs font-bold uppercase text-[var(--mentora-primary)]">{t[artifact.kind] ?? artifact.kind}</p>
+          <h3 className="mt-1 text-base font-semibold text-[var(--mentora-text)]">{artifact.title}</h3>
         </div>
-        <span className="rounded-full bg-white/8 px-2.5 py-1 text-xs text-slate-300">{formatDate(artifact.created_at)}</span>
+        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs text-[var(--mentora-muted)]">{formatDate(artifact.created_at)}</span>
       </div>
       <ArtifactBody artifact={artifact} t={t} />
     </article>
@@ -3795,9 +3849,39 @@ function StatusBadge({ status, t }: { status: DocumentRecord["processing_status"
   return (
     <span className={`status-badge status-${status}`}>
       <StatusDot status={status} />
-      {t[status] ?? status}
+      {studentStatusLabel(status, t)}
     </span>
   );
+}
+
+function studentStatusLabel(status: DocumentRecord["processing_status"], t: Record<string, string>) {
+  if (status === "ready") {
+    return t.ready;
+  }
+  if (status === "failed") {
+    return t.failed;
+  }
+  return t.processing;
+}
+
+function materialTypeIcon(type: DocumentRecord["material_type"]) {
+  switch (type) {
+    case "image":
+      return <FileSearch size={16} />;
+    case "document":
+      return <PaperDocumentIcon />;
+    case "link":
+      return <Globe2 size={16} />;
+    case "text":
+      return <ClipboardList size={16} />;
+    case "pdf":
+    default:
+      return <FileText size={16} />;
+  }
+}
+
+function PaperDocumentIcon() {
+  return <FileText size={16} />;
 }
 
 function StatusDot({ status }: { status: DocumentRecord["processing_status"] }) {
@@ -3827,9 +3911,9 @@ function ProfileFact({
   value: string;
 }) {
   return (
-    <div className={`rounded-2xl border border-white/10 bg-white/[0.04] ${compact ? "p-2" : "p-3"}`}>
-      <p className="text-[11px] font-bold uppercase text-slate-500">{label}</p>
-      <p className="mt-1 break-words text-sm font-semibold text-slate-100">{value}</p>
+    <div className={`profile-fact-card ${compact ? "is-compact" : ""}`}>
+      <p>{label}</p>
+      <strong>{value}</strong>
     </div>
   );
 }

@@ -36,6 +36,8 @@ Mentora uses the following core Design Dials to guide its interface layouts and 
 
 The authenticated student dashboard uses a restrained iOS-inspired Liquid Glass direction. Liquid materials are reserved for navigation, command surfaces, and primary action controls; content cards stay mostly solid/translucent for readability.
 
+This direction now applies to the full student platform: Sidebar, Inicio, Tutor IA, Chat composer, Materiales, Practica, Perfil, empty states, and mobile navigation. The implementation source of truth is `planesupdates/UIdesign.md`, with plugin usage documented in `docs/ui-designer-plugin.md`.
+
 ### Liquid Tokens
 - **Background:** `#f7f9ff` with subtle blue/cyan radial light only.
 - **Ink:** `#071038`; **body copy:** `#17224a`; **muted:** `#4c5a7a`.
@@ -52,6 +54,17 @@ The authenticated student dashboard uses a restrained iOS-inspired Liquid Glass 
 - **`LiquidButton`:** animated glassy primary button with shine layer, spring hover/press, disabled state, and reduced-motion fallback.
 - **`SolidContentCard`:** readable white/translucent cards for materials, plans, tutor guidance, and quick tools.
 - **`MutedInset`:** quiet inset rows for lists, progress, study plan steps, and recent material activity.
+- **`mentora-glass`:** reusable frosted glass panel from `src/styles/tokens.css`.
+- **`mentora-glass-strong`:** stronger text-safe glass surface for chat, cards, forms, and panels with long copy.
+- **`mentora-action-card`:** unified action/card material for source rows, empty states, and practice/results surfaces.
+- **`mentora-primary-button`:** blue/lavender primary action with clear hover, disabled, and focus states.
+
+### Accessibility Guardrails
+- Text-heavy surfaces must use `--mentora-surface-strong` or solid white.
+- Frosted blur should not sit behind long paragraphs or small body text unless the background is strong enough for contrast.
+- Focus states use `--mentora-focus-ring`.
+- Reduced transparency is handled in `src/styles/tokens.css` through `prefers-reduced-transparency` and `@supports not backdrop-filter` fallbacks.
+- Disabled controls remain readable and visibly inactive; they should not look broken or like active controls.
 
 ### Dashboard Rules
 - Keep one dominant action: `Start Study`. Upload, materials, and tools are secondary chips.

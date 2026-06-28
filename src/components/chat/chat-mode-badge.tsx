@@ -1,7 +1,6 @@
 "use client";
 
-import React from "react";
-import { Sparkles, CheckCircle2, Zap } from "lucide-react";
+import { CheckCircle2, Sparkles, Zap } from "lucide-react";
 
 interface ChatModeBadgeProps {
   hasSources: boolean;
@@ -15,16 +14,16 @@ export function ChatModeBadge({ hasSources, readyCount, locale, mode }: ChatMode
 
   if (mode === "fast") {
     return (
-      <div className="inline-flex items-center gap-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-400 select-none animate-in fade-in duration-300">
-        <Zap size={13} className="text-cyan-400" />
+      <div className="inline-flex items-center gap-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-700 select-none">
+        <Zap size={13} />
         <span>
           {hasSources
             ? isEs
-              ? `Chat rapido · ${readyCount} PDF listo`
-              : `Fast Chat · ${readyCount} ready PDF`
+              ? `Chat rapido - ${readyCount} material listo`
+              : `Fast chat - ${readyCount} ready material`
             : isEs
-              ? "Chat rapido sin PDF"
-              : "Fast Chat without PDF"}
+              ? "Chat rapido sin material"
+              : "Fast chat without material"}
         </span>
       </div>
     );
@@ -32,27 +31,25 @@ export function ChatModeBadge({ hasSources, readyCount, locale, mode }: ChatMode
 
   if (hasSources) {
     return (
-      <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400 select-none animate-in fade-in duration-300">
-        <CheckCircle2 size={13} className="text-emerald-400" />
+      <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700 select-none">
+        <CheckCircle2 size={13} />
         <span>
           {mode === "agent"
             ? isEs
-              ? `Agente con PDF (${readyCount} fuente${readyCount > 1 ? "s" : ""})`
-              : `Agent with PDF (${readyCount} source${readyCount > 1 ? "s" : ""})`
+              ? `Agente con material (${readyCount})`
+              : `Agent with material (${readyCount})`
             : isEs
-              ? `Tutor en PDF (${readyCount} fuente${readyCount > 1 ? "s" : ""} lista${readyCount > 1 ? "s" : ""})`
-              : `PDF Grounded Tutor (${readyCount} ready source${readyCount > 1 ? "s" : ""})`}
+              ? `Tutor IA (${readyCount} material${readyCount > 1 ? "es" : ""})`
+              : `AI Tutor (${readyCount} material${readyCount > 1 ? "s" : ""})`}
         </span>
       </div>
     );
   }
 
   return (
-    <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-400 select-none animate-in fade-in duration-300">
-      <Sparkles size={13} className="text-amber-400" />
-      <span>
-        {isEs ? "Tutor General de IA (Modo libre)" : "General AI Tutor (Unrestricted)"}
-      </span>
+    <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-700 select-none">
+      <Sparkles size={13} />
+      <span>{isEs ? "Tutor IA libre" : "General AI Tutor"}</span>
     </div>
   );
 }
