@@ -106,7 +106,7 @@ async function runJob({
 
     // --- AGENT 4: EMBEDDING & STORAGE ---
     await updateProgress("embedding");
-    await embedAndStore({
+    const storedChunkCount = await embedAndStore({
       service,
       documentId,
       studySpaceId,
@@ -115,6 +115,15 @@ async function runJob({
       onProgress: (progressMsg) => {
         console.log(`[Background Worker] [Embedding Agent] ${progressMsg}`);
       },
+    });
+    if (storedChunkCount <= 0) {
+      throw new Error("No readable source chunks were stored for this document.");
+    }
+
+    await mergeDocumentMetadata(service, documentId, {
+      chunk_count: storedChunkCount,
+      extracted_chunk_count: chunks.length,
+      generator_ready: true,
     });
 
     // --- AGENT 5: SOURCE VERIFICATION ---
@@ -127,20 +136,43 @@ async function runJob({
       );
     }
 
+    // Mark the source ready as soon as readable chunks exist. Pre-generated
+    // study tools are useful extras, but they must not block Studio eligibility.
+    await updateProgress("ready");
+    await service
+      .from("documents")
+      .update({
+        processing_status: "ready",
+        error_message: null,
+      })
+      .eq("id", documentId);
+
+    await service
+      .from("document_processing_jobs")
+      .update({
+        status: "completed",
+        current_step: "ready",
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", jobId);
+
     // --- AGENT 6: SUMMARIZATION ---
-    await updateProgress("summarizing");
-    await generateAndStoreSummary({
-      service,
-      tenantId,
-      userId,
-      studySpaceId,
-      documentId,
-      fileName,
-      chunks,
-      onProgress: (progressMsg) => {
-        console.log(`[Background Worker] [Summary Agent] ${progressMsg}`);
-      },
-    });
+    try {
+      await generateAndStoreSummary({
+        service,
+        tenantId,
+        userId,
+        studySpaceId,
+        documentId,
+        fileName,
+        chunks,
+        onProgress: (progressMsg) => {
+          console.log(`[Background Worker] [Summary Agent] ${progressMsg}`);
+        },
+      });
+    } catch (summaryErr) {
+      console.error("[Background Worker] Summary generation failed (non-blocking):", summaryErr);
+    }
 
     // --- AGENT 7: DIAGRAMS CONCEPT MAP ---
     await updateProgress("generating_diagrams");
@@ -181,22 +213,6 @@ async function runJob({
 
     // --- COMPLETE ---
     console.log(`[Background Worker] Job successfully completed for document ${documentId}`);
-    
-    await service
-      .from("document_processing_jobs")
-      .update({
-        status: "completed",
-        current_step: "ready",
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", jobId);
-
-    await service
-      .from("documents")
-      .update({
-        processing_status: "ready",
-      })
-      .eq("id", documentId);
 
   } catch (error) {
     console.error(`[Background Worker] Job failed for document ${documentId}:`, error);
@@ -221,4 +237,31 @@ async function runJob({
       })
       .eq("id", documentId);
   }
+}
+
+async function mergeDocumentMetadata(
+  service: SupabaseClient,
+  documentId: string,
+  patch: Record<string, unknown>,
+) {
+  const { data } = await service
+    .from("documents")
+    .select("metadata")
+    .eq("id", documentId)
+    .single();
+
+  const currentMetadata = isRecord(data?.metadata) ? data.metadata : {};
+  await service
+    .from("documents")
+    .update({
+      metadata: {
+        ...currentMetadata,
+        ...patch,
+      },
+    })
+    .eq("id", documentId);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { getAuthedProfile } from "@/lib/supabase/service";
+import { insertDocumentRecord } from "@/lib/supabase/documents";
 import { validateAndIntake } from "@/lib/ai/agents/pdf-intake-agent";
 import { enqueueDocumentProcessing } from "@/lib/ai/background-worker";
 import { getPdfMaxBytes } from "@/lib/limits";
@@ -99,28 +100,21 @@ export async function POST(request: Request) {
     uploadedStoragePath = storagePath;
 
     // Create the document record with 'pending' status
-    const { data: document, error: insertError } = await service
-      .from("documents")
-      .insert({
-        study_space_id: parsedStudySpaceId.data,
-        tenant_id: profile.tenant_id,
-        user_id: profile.id,
-        file_name: file.name,
-        storage_path: storagePath,
-        material_type: "pdf",
-        mime_type: "application/pdf",
-        processing_status: "pending",
-        metadata: {
-          byte_size: file.size,
-          page_count: intakeResult.pageCount,
-        },
-      })
-      .select("id")
-      .single();
-
-    if (insertError || !document) {
-      throw insertError ?? new Error("Unable to create document record.");
-    }
+    const document = await insertDocumentRecord(service, {
+      tenantId: profile.tenant_id,
+      userId: profile.id,
+      studySpaceId: parsedStudySpaceId.data,
+      fileName: file.name,
+      storagePath,
+      materialType: "pdf",
+      mimeType: "application/pdf",
+      status: "pending",
+      metadata: {
+        byte_size: file.size,
+        page_count: intakeResult.pageCount,
+        chunk_count: 0,
+      },
+    });
 
     documentId = document.id;
 

@@ -11,6 +11,7 @@ import {
   Layers3,
   Loader2,
   MessageSquareText,
+  PanelRightClose,
   Pencil,
   RefreshCw,
   Sparkles,
@@ -20,7 +21,7 @@ import {
   Volume2,
 } from "lucide-react";
 import { useState } from "react";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import type { GeneratedArtifact, StudyNote, ToolKind } from "@/lib/types";
 import { MarkdownMessage } from "../chat/markdown-message";
 
@@ -31,11 +32,13 @@ type StudyStudioPanelProps = {
   hasReadyMaterial: boolean;
   notes: StudyNote[];
   onCreateNote: (text: string) => Promise<boolean> | boolean;
+  onCollapse?: () => void;
   onDeleteNote: (noteId: string) => Promise<boolean> | boolean;
   onGenerate: (kind: ToolKind) => void;
   onSendToChat: (artifact: GeneratedArtifact) => void;
   onUpdateNote: (noteId: string, patch: { title?: string; content?: string }) => Promise<boolean> | boolean;
   readySourceCount: number;
+  blockedReadySourceCount: number;
   selectedCount: number;
   t: Record<string, string>;
 };
@@ -66,11 +69,13 @@ export function StudyStudioPanel({
   hasReadyMaterial,
   notes,
   onCreateNote,
+  onCollapse,
   onDeleteNote,
   onGenerate,
   onSendToChat,
   onUpdateNote,
   readySourceCount,
+  blockedReadySourceCount,
   selectedCount,
   t,
 }: StudyStudioPanelProps) {
@@ -88,17 +93,37 @@ export function StudyStudioPanel({
     onGenerate(kind);
   }
 
+  function preventTileSelection(event: MouseEvent<HTMLElement>) {
+    event.preventDefault();
+  }
+
   return (
     <aside className="notebook-panel notebook-studio-panel flex h-full min-h-0 flex-col">
       <header className="notebook-panel-header px-5 py-4">
-        <h2 className="text-[20px] font-medium leading-none text-[var(--nb-text)]">Studio</h2>
-        <p className="mt-2 text-sm leading-5 text-[var(--nb-muted)]">
-          {selectedCount > 0
-            ? `${selectedCount} selected sources`
-            : readySourceCount > 0
-              ? `${readySourceCount} ready sources available`
-              : "Add a ready source to generate study outputs."}
-        </p>
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="truncate text-[20px] font-medium leading-none text-[var(--nb-text)]">Studio</h2>
+            <p className="mt-2 text-sm leading-5 text-[var(--nb-muted)]">
+              {selectedCount > 0
+                ? `${selectedCount} selected readable sources`
+                : readySourceCount > 0
+                  ? `${readySourceCount} readable sources available`
+                  : blockedReadySourceCount > 0
+                    ? "Ready files found, but no readable chunks yet."
+                    : "Add a readable source to generate study outputs."}
+            </p>
+          </div>
+          {onCollapse && (
+            <button
+              aria-label="Collapse studio"
+              className="notebook-studio-collapse-button hidden h-8 w-8 shrink-0 items-center justify-center rounded-full transition lg:inline-flex"
+              onClick={onCollapse}
+              type="button"
+            >
+              <PanelRightClose size={15} />
+            </button>
+          )}
+        </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
@@ -109,45 +134,53 @@ export function StudyStudioPanel({
             const helper = loading
               ? "Generating..."
               : !hasReadyMaterial
-                ? "Add a ready source first"
+                ? blockedReadySourceCount > 0
+                  ? "No readable chunks"
+                  : "Add a readable source"
                 : selectedCount > 0
                   ? tool.helper
                   : "Use all ready sources";
             return (
               <button
                 key={tool.kind}
+                aria-label={`${tool.label}: ${helper}`}
                 className={`notebook-tool-tile ${tool.tone} group grid min-h-[70px] grid-cols-[22px_minmax(0,1fr)_24px] items-center gap-2 rounded-[12px] p-3 text-left transition ${disabled ? "is-disabled" : ""}`}
                 disabled={disabled}
+                onMouseDown={preventTileSelection}
                 onClick={() => runTool(tool.kind)}
                 type="button"
               >
-                <span className="notebook-tool-icon flex h-6 w-6 shrink-0 items-center justify-center">
+                <span aria-hidden="true" className="notebook-tool-icon flex h-6 w-6 shrink-0 items-center justify-center">
                   {loading ? <Loader2 className="animate-spin" size={17} /> : tool.icon}
                 </span>
-                <span className="min-w-0">
+                <span aria-hidden="true" className="min-w-0">
                   <span className="block truncate text-[13px] font-semibold">{tool.label}</span>
                   <span className="block truncate text-[11px] font-medium opacity-75">
                     {helper}
                   </span>
                 </span>
-                <ArrowRight size={16} className="notebook-tool-arrow shrink-0 transition group-hover:translate-x-0.5" />
+                <ArrowRight aria-hidden="true" size={16} className="notebook-tool-arrow shrink-0 transition group-hover:translate-x-0.5" />
               </button>
             );
           })}
 
           {futureTools.map((tool) => (
-            <div
+            <button
               key={tool.label}
               aria-disabled="true"
+              aria-label={`${tool.label}: ${tool.helper}`}
               className={`notebook-tool-tile ${tool.tone} is-coming-soon grid min-h-[70px] grid-cols-[22px_minmax(0,1fr)_24px] items-center gap-2 rounded-[12px] p-3`}
+              disabled
+              onMouseDown={preventTileSelection}
+              type="button"
             >
-              <span className="notebook-tool-icon flex h-6 w-6 shrink-0 items-center justify-center">{tool.icon}</span>
-              <span className="min-w-0">
+              <span aria-hidden="true" className="notebook-tool-icon flex h-6 w-6 shrink-0 items-center justify-center">{tool.icon}</span>
+              <span aria-hidden="true" className="min-w-0">
                 <span className="block truncate text-[13px] font-semibold">{tool.label}</span>
                 <span className="block truncate text-[11px] font-medium opacity-75">{tool.helper}</span>
               </span>
-              <ArrowRight size={16} className="notebook-tool-arrow shrink-0" />
-            </div>
+              <ArrowRight aria-hidden="true" size={16} className="notebook-tool-arrow shrink-0" />
+            </button>
           ))}
         </div>
 

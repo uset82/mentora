@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { BookOpen, BrainCircuit, PanelLeftClose, PanelRightClose, Sparkles } from "lucide-react";
+import { BookOpen, BrainCircuit, PanelLeftClose, Sparkles } from "lucide-react";
 import type { ChatMessageData } from "../chat/chat-message";
 import type { DocumentRecord, GeneratedArtifact, MaterialType, Profile, StudyNote, StudySpace, ToolKind } from "@/lib/types";
 import { StudyChatPanel } from "./study-chat-panel";
@@ -33,6 +33,7 @@ type StudyWorkspaceProps = {
   onUpdateNote: (noteId: string, patch: { title?: string; content?: string }) => Promise<boolean> | boolean;
   onUpload: (file: File, materialType: MaterialType) => Promise<boolean> | boolean;
   profile: Profile | null;
+  generatorReadyDocuments: DocumentRecord[];
   readyDocuments: DocumentRecord[];
   spaces: StudySpace[];
   t: Record<string, string>;
@@ -59,6 +60,7 @@ export function StudyWorkspace({
   onUpdateNote,
   onUpload,
   profile,
+  generatorReadyDocuments,
   readyDocuments,
   spaces,
   t,
@@ -91,12 +93,17 @@ export function StudyWorkspace({
     () => activeDocuments.filter((document) => selectedMaterialIds.includes(document.id)),
     [activeDocuments, selectedMaterialIds],
   );
-  const selectedReadyMaterialIds = useMemo(
-    () => selectedMaterials.filter((document) => document.processing_status === "ready").map((document) => document.id),
-    [selectedMaterials],
+  const generatorReadyDocumentIds = useMemo(
+    () => new Set(generatorReadyDocuments.map((document) => document.id)),
+    [generatorReadyDocuments],
   );
-  const generationMaterialIds = selectedReadyMaterialIds.length > 0 ? selectedReadyMaterialIds : [];
-  const hasReadyMaterial = readyDocuments.length > 0;
+  const selectedGeneratorReadyMaterialIds = useMemo(
+    () => selectedMaterials.filter((document) => generatorReadyDocumentIds.has(document.id)).map((document) => document.id),
+    [generatorReadyDocumentIds, selectedMaterials],
+  );
+  const generationMaterialIds = selectedGeneratorReadyMaterialIds.length > 0 ? selectedGeneratorReadyMaterialIds : [];
+  const hasReadyMaterial = generatorReadyDocuments.length > 0;
+  const blockedReadySourceCount = Math.max(0, readyDocuments.length - generatorReadyDocuments.length);
 
   function toggleMaterial(documentId: string) {
     setSelectedMaterialIds((current) =>
@@ -205,13 +212,15 @@ export function StudyWorkspace({
                   error={error}
                   hasReadyMaterial={hasReadyMaterial}
                   notes={activeNotes}
+                  blockedReadySourceCount={blockedReadySourceCount}
+                  onCollapse={() => setRightCollapsed(true)}
                   onCreateNote={(text) => onCreateNote(text, selectedMaterialIds)}
                   onDeleteNote={onDeleteNote}
                   onGenerate={(kind) => onGenerate(kind, generationMaterialIds)}
                   onSendToChat={sendArtifactToChat}
                   onUpdateNote={onUpdateNote}
-                  readySourceCount={readyDocuments.length}
-                  selectedCount={selectedReadyMaterialIds.length}
+                  readySourceCount={generatorReadyDocuments.length}
+                  selectedCount={selectedGeneratorReadyMaterialIds.length}
                   t={t}
                 />
               </div>
@@ -223,22 +232,16 @@ export function StudyWorkspace({
               error={error}
               hasReadyMaterial={hasReadyMaterial}
               notes={activeNotes}
+              blockedReadySourceCount={blockedReadySourceCount}
+              onCollapse={() => setRightCollapsed(true)}
               onCreateNote={(text) => onCreateNote(text, selectedMaterialIds)}
               onDeleteNote={onDeleteNote}
               onGenerate={(kind) => onGenerate(kind, generationMaterialIds)}
               onSendToChat={sendArtifactToChat}
               onUpdateNote={onUpdateNote}
-              readySourceCount={readyDocuments.length}
-              selectedCount={selectedReadyMaterialIds.length}
+              readySourceCount={generatorReadyDocuments.length}
+              selectedCount={selectedGeneratorReadyMaterialIds.length}
               t={t}
-            />
-          )}
-          {!rightCollapsed && (
-            <PanelToggle
-              ariaLabel="Collapse studio"
-              className="right-3 top-3"
-              icon={<PanelRightClose size={15} />}
-              onClick={() => setRightCollapsed(true)}
             />
           )}
         </div>

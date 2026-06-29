@@ -13164,9 +13164,12 @@ button:active:not(:disabled),
   border-bottom: 1px solid var(--nb-border);
 }
 
-.notebook-studio-panel .notebook-panel-header,
 .notebook-sources-panel .notebook-panel-header {
   padding-right: 3.75rem;
+}
+
+.notebook-studio-panel .notebook-panel-header {
+  padding-right: 1.25rem;
 }
 
 .notebook-panel-toggle {
@@ -13178,6 +13181,20 @@ button:active:not(:disabled),
 }
 
 .notebook-panel-toggle:hover {
+  color: var(--nb-accent);
+  transform: translateY(-1px);
+}
+
+.notebook-studio-collapse-button {
+  border: 1px solid var(--nb-border);
+  background: var(--nb-panel);
+  color: var(--nb-muted);
+  box-shadow: 0 8px 18px rgba(43, 51, 79, 0.1);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.notebook-studio-collapse-button:hover {
   color: var(--nb-accent);
   transform: translateY(-1px);
 }
@@ -13484,6 +13501,12 @@ button:active:not(:disabled),
   border-color: var(--nb-border);
 }
 
+.notebook-studio-panel,
+.notebook-tool-grid {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .notebook-tool-tile {
   border: 0;
   color: currentColor;
@@ -13492,15 +13515,24 @@ button:active:not(:disabled),
   user-select: none;
 }
 
+.notebook-tool-tile {
+  text-align: left;
+}
+
 .notebook-tool-tile * {
   pointer-events: none;
   -webkit-user-select: none;
   user-select: none;
 }
 
+.notebook-studio-panel::selection,
+.notebook-studio-panel *::selection,
+.notebook-tool-grid::selection,
+.notebook-tool-grid *::selection,
 .notebook-tool-tile::selection,
 .notebook-tool-tile *::selection {
   background: transparent;
+  color: inherit;
 }
 
 .notebook-tool-tile.tone-blue {

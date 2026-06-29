@@ -2,6 +2,7 @@
 
 import { Check, FileImage, FileText, Globe2, NotebookPen, Paperclip } from "lucide-react";
 import type { DocumentRecord, MaterialType } from "@/lib/types";
+import { chunkCountForDocument } from "@/lib/materials/readiness";
 
 type MaterialCardProps = {
   document: DocumentRecord;
@@ -10,7 +11,7 @@ type MaterialCardProps = {
 };
 
 export function MaterialCard({ document, onToggle, selected }: MaterialCardProps) {
-  const status = sourceStatus(document.processing_status);
+  const status = sourceStatus(document);
 
   return (
     <article
@@ -71,12 +72,16 @@ function materialLabel(type: MaterialType) {
   }
 }
 
-function sourceStatus(status: DocumentRecord["processing_status"]) {
-  if (status === "ready") {
+function sourceStatus(document: DocumentRecord) {
+  if (document.processing_status === "ready" && chunkCountForDocument(document) <= 0) {
+    return { className: "is-processing", label: "No readable text" };
+  }
+
+  if (document.processing_status === "ready") {
     return { className: "is-ready", label: "Ready" };
   }
 
-  if (status === "failed") {
+  if (document.processing_status === "failed") {
     return { className: "is-failed", label: "Failed" };
   }
 

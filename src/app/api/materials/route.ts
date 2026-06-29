@@ -4,6 +4,7 @@ import { validateAndIntake } from "@/lib/ai/agents/pdf-intake-agent";
 import { embedAndStore } from "@/lib/ai/agents/embedding-agent";
 import { enqueueDocumentProcessing } from "@/lib/ai/background-worker";
 import { getAuthedProfile } from "@/lib/supabase/service";
+import { insertDocumentRecord } from "@/lib/supabase/documents";
 import { getPdfMaxBytes, SAFETY_LIMITS } from "@/lib/limits";
 import { chunkTextByPage } from "@/lib/rag/chunk";
 import type { MaterialType } from "@/lib/types";
@@ -44,8 +45,6 @@ const ALLOWED_MIME_TYPES = [
   "text/markdown",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ];
-
-type InsertedDocument = { id: string };
 
 export async function POST(request: Request) {
   let documentId: string | null = null;
@@ -176,6 +175,7 @@ export async function POST(request: Request) {
         metadata: {
           byte_size: file.size,
           page_count: intakeResult.pageCount,
+          chunk_count: 0,
         },
       });
 
@@ -223,6 +223,7 @@ export async function POST(request: Request) {
       metadata: {
         byte_size: file.size,
         stored_only: materialType === "image",
+        chunk_count: 0,
       },
     });
     documentId = document.id;
@@ -302,13 +303,16 @@ async function createTextMaterial({
   });
 
   try {
-    await embedAndStore({
+    const storedChunkCount = await embedAndStore({
       service,
       documentId: document.id,
       studySpaceId,
       tenantId,
       chunks,
     });
+    if (storedChunkCount <= 0) {
+      throw new ApiError(400, "This material did not produce readable study chunks.");
+    }
 
     await service
       .from("documents")
@@ -316,8 +320,13 @@ async function createTextMaterial({
         processing_status: "ready",
         metadata: {
           byte_size: byteSize ?? Buffer.byteLength(trimmed, "utf8"),
-          chunk_count: chunks.length,
+          chunk_count: storedChunkCount,
+          extracted_chunk_count: chunks.length,
+          generator_ready: true,
           text_length: trimmed.length,
+          material_type: materialType,
+          mime_type: mimeType,
+          source_url: sourceUrl ?? null,
         },
       })
       .eq("id", document.id);
@@ -350,28 +359,7 @@ async function insertDocument(
     userId: string;
   },
 ) {
-  const { data, error } = await service
-    .from("documents")
-    .insert({
-      study_space_id: input.studySpaceId,
-      tenant_id: input.tenantId,
-      user_id: input.userId,
-      file_name: input.fileName,
-      storage_path: input.storagePath,
-      material_type: input.materialType,
-      mime_type: input.mimeType,
-      source_url: input.sourceUrl ?? null,
-      processing_status: input.status,
-      metadata: input.metadata,
-    })
-    .select("id")
-    .single<InsertedDocument>();
-
-  if (error || !data) {
-    throw error ?? new Error("Unable to create material record.");
-  }
-
-  return data;
+  return insertDocumentRecord(service, input);
 }
 
 async function extractDocumentText(buffer: Buffer, file: File) {

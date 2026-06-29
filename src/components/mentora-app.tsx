@@ -41,6 +41,7 @@ import type { ChangeEvent, ReactNode } from "react";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/browser";
 import { copy } from "@/lib/i18n";
+import { chunkCountForDocument, isGeneratorReadyDocument, normalizeMaterialType } from "@/lib/materials/readiness";
 import { parseFlashcards } from "@/lib/study-content";
 import type { DocumentRecord, GeneratedArtifact, LearningProfile, Locale, MaterialType, Profile, StudyNote, StudySpace, ToolKind } from "@/lib/types";
 import { ChatMessage as ChatMessageComponent } from "./chat/chat-message";
@@ -426,6 +427,64 @@ async function autoSignInDev(client: SupabaseClient, skipRef?: { current: boolea
   }
 }
 
+async function loadDocumentChunkCounts(client: SupabaseClient, documentIds: string[]) {
+  const counts = new Map<string, number>();
+  if (documentIds.length === 0) {
+    return counts;
+  }
+
+  const { data, error } = await client
+    .from("document_chunks")
+    .select("document_id")
+    .in("document_id", documentIds)
+    .limit(10000);
+
+  if (error) {
+    reportClientError("Document chunk count load failed", error);
+    return counts;
+  }
+
+  for (const row of data ?? []) {
+    const documentId = String(row.document_id ?? "");
+    if (documentId) {
+      counts.set(documentId, (counts.get(documentId) ?? 0) + 1);
+    }
+  }
+
+  return counts;
+}
+
+function normalizeLoadedDocument(
+  document: DocumentRecord & Record<string, unknown>,
+  actualChunkCount: number,
+): DocumentRecord {
+  const metadata = isPlainRecord(document.metadata) ? document.metadata : {};
+  const metadataChunkCount = chunkCountForDocument({ metadata });
+  const chunkCount = Math.max(metadataChunkCount, actualChunkCount);
+  const fileName = String(document.file_name ?? "Uploaded material");
+
+  return {
+    ...document,
+    file_name: fileName,
+    material_type: normalizeMaterialType(document.material_type ?? metadata.material_type, fileName),
+    mime_type: typeof document.mime_type === "string" ? document.mime_type : nullableString(metadata.mime_type),
+    source_url: typeof document.source_url === "string" ? document.source_url : nullableString(metadata.source_url),
+    metadata: {
+      ...metadata,
+      chunk_count: chunkCount,
+      generator_ready: chunkCount > 0,
+    },
+  };
+}
+
+function nullableString(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function MentoraApp() {
   const [locale, setLocale] = useState<Locale>("es");
   const supabaseSetup = useMemo(() => {
@@ -633,7 +692,8 @@ export function MentoraApp() {
     });
     setSpaces(loadedSpaces);
 
-    const rawDocs = (documentRows ?? []) as DocumentRecord[];
+    const rawDocs = (documentRows ?? []) as Array<DocumentRecord & Record<string, unknown>>;
+    const chunkCounts = await loadDocumentChunkCounts(client, rawDocs.map((document) => document.id).filter(Boolean));
     const jobs = (Array.isArray(jobRows) ? jobRows : []) as {
       document_id: string;
       status: string;
@@ -641,7 +701,8 @@ export function MentoraApp() {
       error_message: string | null;
     }[];
 
-    const documentsWithJobs = rawDocs.map((doc) => {
+    const documentsWithJobs = rawDocs.map((rawDoc) => {
+      const doc = normalizeLoadedDocument(rawDoc, chunkCounts.get(rawDoc.id) ?? 0);
       const activeJob = jobs.find((j) => j && j.document_id === doc.id);
       if (activeJob) {
         return {
@@ -811,10 +872,11 @@ export function MentoraApp() {
   );
 
   const readyDocuments = activeDocuments.filter((document) => document.processing_status === "ready");
+  const generatorReadyDocuments = readyDocuments.filter(isGeneratorReadyDocument);
   const processingDocuments = activeDocuments.filter(
     (document) => document.processing_status !== "ready" && document.processing_status !== "failed"
   );
-  const hasReadySources = readyDocuments.length > 0;
+  const hasReadySources = generatorReadyDocuments.length > 0;
 
   useEffect(() => {
     if (!supabase || !session || processingDocuments.length === 0) {
@@ -942,6 +1004,7 @@ export function MentoraApp() {
                       onUpdateNote={updateStudyNote}
                       onUpload={uploadDocument}
                       profile={profile}
+                      generatorReadyDocuments={generatorReadyDocuments}
                       readyDocuments={readyDocuments}
                       spaces={spaces}
                       t={t}
@@ -1650,7 +1713,7 @@ export function MentoraApp() {
       if (!response.ok) {
         setError(
           response.status === 409
-            ? "No ready source chunks found. Wait for processing or upload another source."
+            ? "No ready source chunks found. Wait for processing or upload another readable source."
             : payload.error ?? "Generation failed.",
         );
         return;

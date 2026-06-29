@@ -91,7 +91,7 @@ export async function POST(request: Request) {
     });
 
     if (citations.length === 0) {
-      return jsonError("No ready source chunks found for this study space.", 409);
+      return jsonError("No ready source chunks found. Wait for processing or upload another readable source.", 409);
     }
 
     const aiResult = await generateGroundedText({

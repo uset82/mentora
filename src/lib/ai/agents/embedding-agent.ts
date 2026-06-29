@@ -25,8 +25,9 @@ export async function embedAndStore({
   tenantId,
   chunks,
   onProgress,
-}: EmbeddingAgentOptions): Promise<void> {
+}: EmbeddingAgentOptions): Promise<number> {
   const total = chunks.length;
+  let storedCount = 0;
   onProgress?.(`Starting embedding generation for ${total} chunks...`);
 
   for (let i = 0; i < total; i += BATCH_SIZE) {
@@ -49,6 +50,7 @@ export async function embedAndStore({
       if (error) {
         throw error;
       }
+      storedCount += rows.length;
     } catch (batchError) {
       console.warn(`[Embedding Agent] Batch starting at chunk ${i} failed. Retrying chunks individually.`, batchError);
       
@@ -67,6 +69,7 @@ export async function embedAndStore({
           if (error) {
             throw error;
           }
+          storedCount += 1;
         } catch (individualError) {
           console.error(
             `[Embedding Agent] Failed to embed/store individual chunk on page ${chunk.pageNumber}:`,
@@ -78,5 +81,6 @@ export async function embedAndStore({
     }
   }
 
-  onProgress?.("Embedding generation completed.");
+  onProgress?.(`Embedding generation completed for ${storedCount} stored chunks.`);
+  return storedCount;
 }
