@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
-import { BookOpen, BrainCircuit, PanelLeftClose, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import { BookOpen, BrainCircuit, GripVertical, PanelLeftClose, Sparkles } from "lucide-react";
 import type { ChatMessageData } from "../chat/chat-message";
 import type { DocumentRecord, GeneratedArtifact, MaterialType, Profile, StudyNote, StudySpace, ToolKind } from "@/lib/types";
 import { StudyChatPanel } from "./study-chat-panel";
@@ -11,6 +11,16 @@ import { StudyStudioPanel } from "./study-studio-panel";
 import { StudyTopbar, type ThemeMode } from "./study-topbar";
 
 type MobilePanel = "sources" | "chat" | "studio";
+type ResizeTarget = "left" | "right";
+type PanelWidths = { left: number; right: number };
+
+const COLLAPSED_PANEL_WIDTH = 64;
+const DEFAULT_PANEL_WIDTHS: PanelWidths = { left: 340, right: 400 };
+const PANEL_WIDTH_STORAGE_KEY = "mentora-study-panel-widths";
+const MIN_SOURCES_PANEL_WIDTH = 260;
+const MIN_CHAT_PANEL_WIDTH = 320;
+const MIN_STUDIO_PANEL_WIDTH = 300;
+const KEYBOARD_RESIZE_STEP = 24;
 
 type StudyWorkspaceProps = {
   activeArtifacts: GeneratedArtifact[];
@@ -68,12 +78,72 @@ export function StudyWorkspace({
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("chat");
   const [leftCollapsed, setLeftCollapsed] = useLocalPanelState("mentora-study-left-collapsed", false);
   const [rightCollapsed, setRightCollapsed] = useLocalPanelState("mentora-study-right-collapsed", false);
+  const [panelWidths, setPanelWidths] = useLocalPanelWidths();
+  const [resizingPanel, setResizingPanel] = useState<ResizeTarget | null>(null);
   const [themeMode, setThemeMode] = useLocalThemeState();
   const [selectedMaterialIds, setSelectedMaterialIds] = useState<string[]>([]);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     document.documentElement.dataset.mentoraTheme = themeMode;
   }, [themeMode]);
+
+  useEffect(() => {
+    function normalizePanelWidths() {
+      setPanelWidths((current) => clampPanelWidthsForGrid(current, gridRef.current, leftCollapsed, rightCollapsed));
+    }
+
+    normalizePanelWidths();
+    window.addEventListener("resize", normalizePanelWidths);
+    return () => window.removeEventListener("resize", normalizePanelWidths);
+  }, [leftCollapsed, rightCollapsed, setPanelWidths]);
+
+  useEffect(() => {
+    if (!resizingPanel) {
+      return;
+    }
+
+    const target = resizingPanel;
+    const previousCursor = document.documentElement.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.documentElement.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    function handlePointerMove(event: PointerEvent) {
+      const nextWidth = panelWidthFromPointer(target, event.clientX, gridRef.current);
+      if (nextWidth === null) {
+        return;
+      }
+
+      setPanelWidths((current) =>
+        clampPanelWidthsForGrid(
+          {
+            ...current,
+            [target]: nextWidth,
+          },
+          gridRef.current,
+          leftCollapsed,
+          rightCollapsed,
+        ),
+      );
+    }
+
+    function handlePointerUp() {
+      setResizingPanel(null);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    window.addEventListener("pointercancel", handlePointerUp, { once: true });
+
+    return () => {
+      document.documentElement.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [leftCollapsed, resizingPanel, rightCollapsed, setPanelWidths]);
 
   useEffect(() => {
     function handleFocusShortcut(event: KeyboardEvent) {
@@ -116,8 +186,36 @@ export function StudyWorkspace({
     setMobilePanel("chat");
   }
 
+  function startResize(target: ResizeTarget) {
+    setResizingPanel(target);
+  }
+
+  function resizeWithKeyboard(target: ResizeTarget, direction: -1 | 1) {
+    const signedStep = target === "left" ? direction * KEYBOARD_RESIZE_STEP : direction * -KEYBOARD_RESIZE_STEP;
+    setPanelWidths((current) =>
+      clampPanelWidthsForGrid(
+        {
+          ...current,
+          [target]: current[target] + signedStep,
+        },
+        gridRef.current,
+        leftCollapsed,
+        rightCollapsed,
+      ),
+    );
+  }
+
+  function handleResizeKeyDown(event: ReactKeyboardEvent<HTMLDivElement>, target: ResizeTarget) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+      return;
+    }
+
+    event.preventDefault();
+    resizeWithKeyboard(target, event.key === "ArrowRight" ? 1 : -1);
+  }
+
   return (
-    <section className="notebook-workspace flex h-[calc(100dvh-1rem)] min-h-0 flex-col overflow-hidden lg:h-[calc(100dvh-1.5rem)]">
+    <section className={`notebook-workspace flex h-[calc(100dvh-1rem)] min-h-0 flex-col overflow-hidden lg:h-[calc(100dvh-1.5rem)] ${resizingPanel ? "is-resizing" : ""}`}>
       <StudyTopbar
         activeSpace={activeSpace}
         documents={activeDocuments}
@@ -134,10 +232,11 @@ export function StudyWorkspace({
       />
 
       <div
+        ref={gridRef}
         className="notebook-workspace-grid grid min-h-0 flex-1 grid-cols-1 gap-3 px-3 pb-3 lg:grid-cols-[var(--study-left)_minmax(0,1fr)_var(--study-right)] lg:gap-4 lg:px-4 lg:pb-4"
         style={{
-          "--study-left": leftCollapsed ? "64px" : "320px",
-          "--study-right": rightCollapsed ? "64px" : "360px",
+          "--study-left": leftCollapsed ? `${COLLAPSED_PANEL_WIDTH}px` : `${panelWidths.left}px`,
+          "--study-right": rightCollapsed ? `${COLLAPSED_PANEL_WIDTH}px` : `${panelWidths.right}px`,
         } as CSSProperties}
       >
         <div className={`notebook-panel-slot ${mobilePanel === "sources" ? "block" : "hidden"} h-full min-h-0 lg:block`}>
@@ -177,6 +276,15 @@ export function StudyWorkspace({
               onClick={() => setLeftCollapsed(true)}
             />
           )}
+          {!leftCollapsed && (
+            <PanelResizeHandle
+              active={resizingPanel === "left"}
+              ariaLabel="Resize Sources and Chat panels"
+              onKeyDown={(event) => handleResizeKeyDown(event, "left")}
+              onPointerDown={() => startResize("left")}
+              value={panelWidths.left}
+            />
+          )}
         </div>
 
         <div className={`notebook-panel-slot ${mobilePanel === "chat" ? "block" : "hidden"} h-full min-h-0 lg:block`}>
@@ -197,6 +305,15 @@ export function StudyWorkspace({
             selectedMaterials={selectedMaterials}
             t={t}
           />
+          {!rightCollapsed && (
+            <PanelResizeHandle
+              active={resizingPanel === "right"}
+              ariaLabel="Resize Chat and Studio panels"
+              onKeyDown={(event) => handleResizeKeyDown(event, "right")}
+              onPointerDown={() => startResize("right")}
+              value={panelWidths.right}
+            />
+          )}
         </div>
 
         <div className={`notebook-panel-slot ${mobilePanel === "studio" ? "block" : "hidden"} h-full min-h-0 lg:block`}>
@@ -269,6 +386,96 @@ function CollapsedPanel({ icon, label, onClick }: { icon: ReactNode; label: stri
   );
 }
 
+function readGridColumnGap(grid: HTMLDivElement) {
+  const parsed = Number.parseFloat(window.getComputedStyle(grid).columnGap);
+  return Number.isFinite(parsed) ? parsed : 16;
+}
+
+function clampPanelWidthsForGrid(
+  widths: PanelWidths,
+  grid: HTMLDivElement | null,
+  leftCollapsed: boolean,
+  rightCollapsed: boolean,
+): PanelWidths {
+  if (!grid) {
+    return {
+      left: clamp(widths.left, MIN_SOURCES_PANEL_WIDTH, 640),
+      right: clamp(widths.right, MIN_STUDIO_PANEL_WIDTH, 720),
+    };
+  }
+
+  const gap = readGridColumnGap(grid);
+  const availableWidth = Math.max(0, grid.clientWidth - gap * 2);
+  let left = clamp(widths.left, MIN_SOURCES_PANEL_WIDTH, availableWidth);
+  let right = clamp(widths.right, MIN_STUDIO_PANEL_WIDTH, availableWidth);
+
+  if (!leftCollapsed) {
+    const fixedRight = rightCollapsed ? COLLAPSED_PANEL_WIDTH : right;
+    const maxLeft = Math.max(MIN_SOURCES_PANEL_WIDTH, availableWidth - fixedRight - MIN_CHAT_PANEL_WIDTH);
+    left = clamp(left, MIN_SOURCES_PANEL_WIDTH, maxLeft);
+  }
+
+  if (!rightCollapsed) {
+    const fixedLeft = leftCollapsed ? COLLAPSED_PANEL_WIDTH : left;
+    const maxRight = Math.max(MIN_STUDIO_PANEL_WIDTH, availableWidth - fixedLeft - MIN_CHAT_PANEL_WIDTH);
+    right = clamp(right, MIN_STUDIO_PANEL_WIDTH, maxRight);
+  }
+
+  return { left: Math.round(left), right: Math.round(right) };
+}
+
+function panelWidthFromPointer(target: ResizeTarget, clientX: number, grid: HTMLDivElement | null) {
+  if (!grid) {
+    return null;
+  }
+
+  const rect = grid.getBoundingClientRect();
+  const gap = readGridColumnGap(grid);
+  if (target === "left") {
+    return clientX - rect.left;
+  }
+
+  return rect.right - clientX - gap;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), Math.max(min, max));
+}
+
+function PanelResizeHandle({
+  active,
+  ariaLabel,
+  onKeyDown,
+  onPointerDown,
+  value,
+}: {
+  active: boolean;
+  ariaLabel: string;
+  onKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
+  onPointerDown: () => void;
+  value: number;
+}) {
+  return (
+    <div
+      aria-label={ariaLabel}
+      aria-orientation="vertical"
+      aria-valuenow={Math.round(value)}
+      className={`notebook-resize-handle ${active ? "is-active" : ""}`}
+      onKeyDown={onKeyDown}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        onPointerDown();
+      }}
+      role="separator"
+      tabIndex={0}
+    >
+      <span className="notebook-resize-grip" aria-hidden="true">
+        <GripVertical size={16} strokeWidth={2.4} />
+      </span>
+    </div>
+  );
+}
+
 function PanelToggle({
   ariaLabel,
   className,
@@ -330,6 +537,36 @@ function useLocalThemeState() {
   useEffect(() => {
     try {
       window.localStorage.setItem("mentora-theme-mode", value);
+    } catch {}
+  }, [value]);
+
+  return [value, setValue] as const;
+}
+
+function useLocalPanelWidths() {
+  const [value, setValue] = useState<PanelWidths>(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const stored = window.localStorage.getItem(PANEL_WIDTH_STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored) as Partial<PanelWidths>;
+          const left = Number(parsed.left);
+          const right = Number(parsed.right);
+          if (Number.isFinite(left) && Number.isFinite(right)) {
+            return {
+              left: clamp(left, MIN_SOURCES_PANEL_WIDTH, 720),
+              right: clamp(right, MIN_STUDIO_PANEL_WIDTH, 820),
+            };
+          }
+        }
+      }
+    } catch {}
+    return DEFAULT_PANEL_WIDTHS;
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, JSON.stringify(value));
     } catch {}
   }, [value]);
 

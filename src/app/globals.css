@@ -13152,6 +13152,99 @@ button:active:not(:disabled),
   min-width: 0;
 }
 
+.notebook-workspace.is-resizing,
+.notebook-workspace.is-resizing * {
+  cursor: col-resize !important;
+}
+
+.notebook-workspace.is-resizing * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.notebook-resize-handle {
+  position: absolute;
+  top: 18px;
+  right: -18px;
+  bottom: 18px;
+  z-index: 35;
+  display: none;
+  width: 20px;
+  cursor: col-resize;
+  touch-action: none;
+  color: var(--nb-muted);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.notebook-resize-handle::before {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 50%;
+  width: 1px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--nb-border-strong) 58%, transparent);
+  content: "";
+  opacity: 0;
+  transform: translateX(-50%);
+  transition:
+    opacity 160ms ease,
+    background-color 160ms ease;
+}
+
+.notebook-resize-grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 24px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid var(--nb-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--nb-panel) 94%, transparent);
+  color: var(--nb-muted);
+  box-shadow: 0 10px 22px rgba(43, 51, 79, 0.08);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.92);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.notebook-resize-handle:hover::before,
+.notebook-resize-handle:focus-visible::before,
+.notebook-resize-handle.is-active::before {
+  opacity: 1;
+  background: color-mix(in srgb, var(--nb-accent) 42%, var(--nb-border-strong));
+}
+
+.notebook-resize-handle:hover .notebook-resize-grip,
+.notebook-resize-handle:focus-visible .notebook-resize-grip,
+.notebook-resize-handle.is-active .notebook-resize-grip {
+  border-color: color-mix(in srgb, var(--nb-accent) 32%, var(--nb-border));
+  background: var(--nb-panel);
+  color: var(--nb-accent);
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.notebook-resize-handle:focus-visible {
+  outline: none;
+}
+
+@media (min-width: 1024px) {
+  .notebook-resize-handle {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+  }
+}
+
 .notebook-panel {
   border: 1px solid var(--nb-border);
   border-radius: 20px;
