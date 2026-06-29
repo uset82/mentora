@@ -28,13 +28,14 @@ type StudyStudioPanelProps = {
   artifacts: GeneratedArtifact[];
   busy: string | null;
   error: string | null;
-  hasSelectedReadyMaterial: boolean;
+  hasReadyMaterial: boolean;
   notes: StudyNote[];
   onCreateNote: (text: string) => Promise<boolean> | boolean;
   onDeleteNote: (noteId: string) => Promise<boolean> | boolean;
   onGenerate: (kind: ToolKind) => void;
   onSendToChat: (artifact: GeneratedArtifact) => void;
   onUpdateNote: (noteId: string, patch: { title?: string; content?: string }) => Promise<boolean> | boolean;
+  readySourceCount: number;
   selectedCount: number;
   t: Record<string, string>;
 };
@@ -62,13 +63,14 @@ export function StudyStudioPanel({
   artifacts,
   busy,
   error,
-  hasSelectedReadyMaterial,
+  hasReadyMaterial,
   notes,
   onCreateNote,
   onDeleteNote,
   onGenerate,
   onSendToChat,
   onUpdateNote,
+  readySourceCount,
   selectedCount,
   t,
 }: StudyStudioPanelProps) {
@@ -91,7 +93,11 @@ export function StudyStudioPanel({
       <header className="notebook-panel-header px-5 py-4">
         <h2 className="text-[20px] font-medium leading-none text-[var(--nb-text)]">Studio</h2>
         <p className="mt-2 text-sm leading-5 text-[var(--nb-muted)]">
-          {selectedCount > 0 ? `${selectedCount} selected sources` : "Add or select a source to generate study outputs."}
+          {selectedCount > 0
+            ? `${selectedCount} selected sources`
+            : readySourceCount > 0
+              ? `${readySourceCount} ready sources available`
+              : "Add a ready source to generate study outputs."}
         </p>
       </header>
 
@@ -99,7 +105,14 @@ export function StudyStudioPanel({
         <div className="notebook-tool-grid grid grid-cols-2 gap-2">
           {tools.map((tool) => {
             const loading = busy === tool.kind;
-            const disabled = !hasSelectedReadyMaterial || loading;
+            const disabled = !hasReadyMaterial || loading;
+            const helper = loading
+              ? "Generating..."
+              : !hasReadyMaterial
+                ? "Add a ready source first"
+                : selectedCount > 0
+                  ? tool.helper
+                  : "Use all ready sources";
             return (
               <button
                 key={tool.kind}
@@ -114,7 +127,7 @@ export function StudyStudioPanel({
                 <span className="min-w-0">
                   <span className="block truncate text-[13px] font-semibold">{tool.label}</span>
                   <span className="block truncate text-[11px] font-medium opacity-75">
-                    {loading ? "Generating..." : disabled ? "Add a source first" : tool.helper}
+                    {helper}
                   </span>
                 </span>
                 <ArrowRight size={16} className="notebook-tool-arrow shrink-0 transition group-hover:translate-x-0.5" />
@@ -123,7 +136,11 @@ export function StudyStudioPanel({
           })}
 
           {futureTools.map((tool) => (
-            <div key={tool.label} className={`notebook-tool-tile ${tool.tone} is-coming-soon grid min-h-[70px] grid-cols-[22px_minmax(0,1fr)_24px] items-center gap-2 rounded-[12px] p-3`}>
+            <div
+              key={tool.label}
+              aria-disabled="true"
+              className={`notebook-tool-tile ${tool.tone} is-coming-soon grid min-h-[70px] grid-cols-[22px_minmax(0,1fr)_24px] items-center gap-2 rounded-[12px] p-3`}
+            >
               <span className="notebook-tool-icon flex h-6 w-6 shrink-0 items-center justify-center">{tool.icon}</span>
               <span className="min-w-0">
                 <span className="block truncate text-[13px] font-semibold">{tool.label}</span>

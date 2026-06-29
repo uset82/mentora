@@ -13164,11 +13164,17 @@ button:active:not(:disabled),
   border-bottom: 1px solid var(--nb-border);
 }
 
+.notebook-studio-panel .notebook-panel-header,
+.notebook-sources-panel .notebook-panel-header {
+  padding-right: 3.75rem;
+}
+
 .notebook-panel-toggle {
   border: 1px solid var(--nb-border);
   background: var(--nb-panel);
   color: var(--nb-muted);
   box-shadow: 0 8px 18px rgba(43, 51, 79, 0.1);
+  user-select: none;
 }
 
 .notebook-panel-toggle:hover {
@@ -13482,6 +13488,18 @@ button:active:not(:disabled),
   border: 0;
   color: currentColor;
   overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.notebook-tool-tile * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.notebook-tool-tile::selection,
+.notebook-tool-tile *::selection {
+  background: transparent;
 }
 
 .notebook-tool-tile.tone-blue {

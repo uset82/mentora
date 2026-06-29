@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { BookOpen, BrainCircuit, Sparkles } from "lucide-react";
+import { BookOpen, BrainCircuit, PanelLeftClose, PanelRightClose, Sparkles } from "lucide-react";
 import type { ChatMessageData } from "../chat/chat-message";
 import type { DocumentRecord, GeneratedArtifact, MaterialType, Profile, StudyNote, StudySpace, ToolKind } from "@/lib/types";
 import { StudyChatPanel } from "./study-chat-panel";
@@ -91,7 +91,12 @@ export function StudyWorkspace({
     () => activeDocuments.filter((document) => selectedMaterialIds.includes(document.id)),
     [activeDocuments, selectedMaterialIds],
   );
-  const hasSelectedReadyMaterial = selectedMaterials.some((document) => document.processing_status === "ready");
+  const selectedReadyMaterialIds = useMemo(
+    () => selectedMaterials.filter((document) => document.processing_status === "ready").map((document) => document.id),
+    [selectedMaterials],
+  );
+  const generationMaterialIds = selectedReadyMaterialIds.length > 0 ? selectedReadyMaterialIds : [];
+  const hasReadyMaterial = readyDocuments.length > 0;
 
   function toggleMaterial(documentId: string) {
     setSelectedMaterialIds((current) =>
@@ -161,7 +166,7 @@ export function StudyWorkspace({
             <PanelToggle
               ariaLabel="Collapse sources"
               className="right-3 top-3"
-              icon={<BookOpen size={15} />}
+              icon={<PanelLeftClose size={15} />}
               onClick={() => setLeftCollapsed(true)}
             />
           )}
@@ -198,14 +203,15 @@ export function StudyWorkspace({
                   artifacts={activeArtifacts}
                   busy={busy}
                   error={error}
-                  hasSelectedReadyMaterial={hasSelectedReadyMaterial}
+                  hasReadyMaterial={hasReadyMaterial}
                   notes={activeNotes}
                   onCreateNote={(text) => onCreateNote(text, selectedMaterialIds)}
                   onDeleteNote={onDeleteNote}
-                  onGenerate={(kind) => onGenerate(kind, selectedMaterialIds)}
+                  onGenerate={(kind) => onGenerate(kind, generationMaterialIds)}
                   onSendToChat={sendArtifactToChat}
                   onUpdateNote={onUpdateNote}
-                  selectedCount={selectedMaterials.length}
+                  readySourceCount={readyDocuments.length}
+                  selectedCount={selectedReadyMaterialIds.length}
                   t={t}
                 />
               </div>
@@ -215,22 +221,23 @@ export function StudyWorkspace({
               artifacts={activeArtifacts}
               busy={busy}
               error={error}
-              hasSelectedReadyMaterial={hasSelectedReadyMaterial}
+              hasReadyMaterial={hasReadyMaterial}
               notes={activeNotes}
               onCreateNote={(text) => onCreateNote(text, selectedMaterialIds)}
               onDeleteNote={onDeleteNote}
-              onGenerate={(kind) => onGenerate(kind, selectedMaterialIds)}
+              onGenerate={(kind) => onGenerate(kind, generationMaterialIds)}
               onSendToChat={sendArtifactToChat}
               onUpdateNote={onUpdateNote}
-              selectedCount={selectedMaterials.length}
+              readySourceCount={readyDocuments.length}
+              selectedCount={selectedReadyMaterialIds.length}
               t={t}
             />
           )}
           {!rightCollapsed && (
             <PanelToggle
               ariaLabel="Collapse studio"
-              className="left-3 top-3"
-              icon={<Sparkles size={15} />}
+              className="right-3 top-3"
+              icon={<PanelRightClose size={15} />}
               onClick={() => setRightCollapsed(true)}
             />
           )}
