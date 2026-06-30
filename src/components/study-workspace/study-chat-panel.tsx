@@ -24,6 +24,7 @@ type StudyChatPanelProps = {
   messages: ChatMessageData[];
   onAddLink: (url: string) => Promise<boolean> | boolean;
   onCreateNote: (text: string) => Promise<boolean> | boolean;
+  onCreateSourceNote: (text: string) => Promise<boolean> | boolean;
   onFocusChat: () => void;
   onSend: (message: string) => void;
   onUpload: (file: File, materialType: MaterialType) => Promise<boolean> | boolean;
@@ -38,6 +39,7 @@ export function StudyChatPanel({
   messages,
   onAddLink,
   onCreateNote,
+  onCreateSourceNote,
   onFocusChat,
   onSend,
   onUpload,
@@ -149,7 +151,7 @@ export function StudyChatPanel({
           disabled={busy === "chat"}
           loading={busy === "chat"}
           onAddLink={onAddLink}
-          onCreateNote={onCreateNote}
+          onCreateNote={onCreateSourceNote}
           onSend={onSend}
           onUpload={onUpload}
           placeholder="Pregunta lo que quieras o sube material..."

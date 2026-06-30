@@ -35,6 +35,18 @@ const jsonMaterialSchema = z.object({
   url: z.string().url().max(2048).optional(),
   text: z.string().trim().min(1).max(MAX_TEXT_CHARS).optional(),
 });
+const deleteMaterialSchema = z.object({
+  documentId: z.string().uuid(),
+});
+
+type DeleteDocumentRow = {
+  id: string;
+  study_space_id: string;
+  tenant_id: string;
+  user_id: string;
+  storage_path: string | null;
+  metadata: Record<string, unknown> | null;
+};
 
 const ALLOWED_MIME_TYPES = [
   "application/pdf",
@@ -362,6 +374,61 @@ async function insertDocument(
   return insertDocumentRecord(service, input);
 }
 
+export async function DELETE(request: Request) {
+  try {
+    const { profile, service } = await getAuthedProfile(request.headers.get("authorization"));
+    const body = await parseJsonBody(request, deleteMaterialSchema);
+    const limit = rateLimit(rateLimitKey(request, profile.id, "materials-delete"), 30);
+    if (!limit.ok) {
+      throw new ApiError(429, "Too many delete requests. Please wait a minute and try again.");
+    }
+
+    const { data: document, error: documentError } = await service
+      .from("documents")
+      .select("id, study_space_id, tenant_id, user_id, storage_path, metadata")
+      .eq("id", body.documentId)
+      .eq("tenant_id", profile.tenant_id)
+      .eq("user_id", profile.id)
+      .maybeSingle<DeleteDocumentRow>();
+
+    if (documentError) {
+      throw documentError;
+    }
+    if (!document) {
+      throw new ApiError(404, "Material not found.");
+    }
+
+    await requireOwnedStudySpace(service, profile, document.study_space_id);
+
+    const { error: chunksError } = await service.from("document_chunks").delete().eq("document_id", document.id);
+    if (chunksError) {
+      throw chunksError;
+    }
+
+    if (isStorageBackedMaterial(document)) {
+      const { error: storageError } = await service.storage.from(DOCUMENTS_BUCKET).remove([document.storage_path]);
+      if (storageError && !isStorageNotFoundError(storageError)) {
+        throw storageError;
+      }
+    }
+
+    const { error: deleteError } = await service
+      .from("documents")
+      .delete()
+      .eq("id", document.id)
+      .eq("tenant_id", profile.tenant_id)
+      .eq("user_id", profile.id);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    return jsonResponse({ deleted: true, documentId: document.id });
+  } catch (error) {
+    return errorResponse(error, "Unable to delete material.");
+  }
+}
+
 async function extractDocumentText(buffer: Buffer, file: File) {
   const normalizedName = file.name.toLowerCase();
   if (file.type === "text/plain" || file.type === "text/markdown" || normalizedName.endsWith(".txt") || normalizedName.endsWith(".md")) {
@@ -495,4 +562,19 @@ function fallbackMimeType(materialType: MaterialType) {
 function sanitizeFileName(fileName: string, materialType: MaterialType) {
   const extension = materialType === "pdf" ? ".pdf" : materialType === "image" ? "" : ".txt";
   return fileName.replace(/[^\w.\-]+/g, "_").replace(/^_+/, "").slice(0, 120) || `material${extension}`;
+}
+
+function isStorageBackedMaterial(document: DeleteDocumentRow): document is DeleteDocumentRow & { storage_path: string } {
+  if (!document.storage_path) {
+    return false;
+  }
+
+  const materialType = typeof document.metadata?.material_type === "string" ? document.metadata.material_type : null;
+  return materialType !== "text" && materialType !== "link" && !document.storage_path.startsWith("text/") && !document.storage_path.startsWith("link/");
+}
+
+function isStorageNotFoundError(error: unknown) {
+  const message = safeErrorMessage(error, "").toLowerCase();
+  const status = Number((error as { status?: unknown; statusCode?: unknown } | null)?.status ?? (error as { statusCode?: unknown } | null)?.statusCode);
+  return status === 404 || message.includes("not found") || message.includes("does not exist");
 }

@@ -14,6 +14,7 @@ export type MaterialsPanelProps = {
   documents: DocumentRecord[];
   onAddLink: (url: string) => Promise<boolean> | boolean;
   onCreateNote: (text: string) => Promise<boolean> | boolean;
+  onDeleteDocument: (documentId: string) => Promise<boolean> | boolean;
   onToggleMaterial: (documentId: string) => void;
   onUpload: (file: File, materialType: MaterialType) => Promise<boolean> | boolean;
   selectedMaterialIds: string[];
@@ -24,6 +25,7 @@ export function MaterialsPanel({
   documents,
   onAddLink,
   onCreateNote,
+  onDeleteDocument,
   onToggleMaterial,
   onUpload,
   selectedMaterialIds,
@@ -68,6 +70,8 @@ export function MaterialsPanel({
               <MaterialCard
                 key={document.id}
                 document={document}
+                deleting={busy === "delete-material"}
+                onDelete={onDeleteDocument}
                 onToggle={onToggleMaterial}
                 selected={selectedMaterialIds.includes(document.id)}
               />

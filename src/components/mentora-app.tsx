@@ -477,6 +477,49 @@ function normalizeLoadedDocument(
   };
 }
 
+function normalizeLoadedArtifact(artifact: GeneratedArtifact): GeneratedArtifact {
+  return {
+    ...artifact,
+    kind: inferArtifactKind(artifact),
+  };
+}
+
+function inferArtifactKind(artifact: GeneratedArtifact): ToolKind {
+  const title = artifact.title.toLowerCase();
+  const content = artifact.content.slice(0, 120).toLowerCase();
+  const signature = `${title}\n${content}`;
+
+  if (signature.includes("tabla de datos") || signature.includes("data table")) {
+    return "data_table";
+  }
+  if (signature.includes("guia de estudio") || signature.includes("guía de estudio") || signature.includes("study guide")) {
+    return "study_guide";
+  }
+  if (signature.includes("mapa mental") || signature.includes("mind map")) {
+    return "mind_map";
+  }
+  if (signature.includes("diagrama") || signature.includes("diagram")) {
+    return "diagram";
+  }
+  if (signature.includes("infografia") || signature.includes("infografía") || signature.includes("infographic")) {
+    return "infographic";
+  }
+  if (signature.includes("flashcards") || signature.includes("card ")) {
+    return "flashcards";
+  }
+  if (signature.includes("quiz") || signature.includes("practice quiz")) {
+    return "quiz";
+  }
+  if (signature.includes("apa")) {
+    return "apa_summary";
+  }
+  if (signature.includes("resumen") || signature.includes("summary")) {
+    return "summary";
+  }
+
+  return artifact.kind;
+}
+
 function nullableString(value: unknown) {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
@@ -779,7 +822,7 @@ export function MentoraApp() {
     });
 
     setDocuments(documentsWithJobs);
-    setArtifacts((artifactRows ?? []) as GeneratedArtifact[]);
+    setArtifacts(((artifactRows ?? []) as GeneratedArtifact[]).map(normalizeLoadedArtifact));
     setNotes((noteRows ?? []) as StudyNote[]);
     setMessages(loadedMessages);
 
@@ -1056,12 +1099,12 @@ export function MentoraApp() {
                       onAddLink={uploadLink}
                       onCreateSpace={(name) => createStudySpace(name)}
                       onCreateNote={saveStudyNote}
+                      onCreateSourceNote={createNoteMaterial}
+                      onDeleteDocument={deleteMaterial}
                       onDeleteNote={deleteStudyNote}
-                      onGenerate={(kind, selectedDocumentIds) => {
-                        if (activeSpace) {
-                          void generateTool(activeSpace.id, kind, selectedDocumentIds);
-                        }
-                      }}
+                      onGenerate={(kind, selectedDocumentIds) =>
+                        activeSpace ? generateTool(activeSpace.id, kind, selectedDocumentIds) : Promise.resolve(null)
+                      }
                       onOpenProfile={() => setActiveView("profile")}
                       onOpenProgress={() => setError(locale === "es" ? "Progreso estara disponible cuando haya datos reales de estudio." : "Progress will be available when real study data exists.")}
                       onSelectSpace={setActiveSpaceId}
@@ -1442,6 +1485,47 @@ export function MentoraApp() {
     }
   }
 
+  async function deleteMaterial(documentId: string) {
+    if (!supabase) {
+      return false;
+    }
+
+    setBusy("delete-material");
+    setError(null);
+    const token = await getAccessToken(supabase);
+    if (!token) {
+      setBusy(null);
+      setError(t.authError);
+      return false;
+    }
+
+    try {
+      const response = await fetch("/api/materials", {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ documentId }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { deleted?: boolean; error?: string };
+      if (!response.ok || !payload.deleted) {
+        setError(payload.error ?? "No se pudo eliminar el documento.");
+        return false;
+      }
+
+      setDocuments((current) => current.filter((document) => document.id !== documentId));
+      await loadWorkspace();
+      return true;
+    } catch (caught) {
+      reportClientError("Material delete failed", caught);
+      setError(t.authNetworkError);
+      return false;
+    } finally {
+      setBusy(null);
+    }
+  }
+
   function handleModelSelect(modelId: string) {
     const model = models.find((item) => item.id === modelId);
 
@@ -1747,15 +1831,20 @@ export function MentoraApp() {
     }
   }
 
-  async function generateTool(studySpaceId: string, kind: ToolKind, selectedDocumentIds: string[] = []) {
+  async function generateTool(studySpaceId: string, kind: ToolKind, selectedDocumentIds: string[] = []): Promise<GeneratedArtifact | null> {
     if (!supabase) {
-      return;
+      return null;
     }
 
     setBusy(kind);
     setError(null);
     try {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
+      if (!token) {
+        setError(t.authError);
+        return null;
+      }
+
       const response = await fetch("/api/tools", {
         method: "POST",
         headers: {
@@ -1782,19 +1871,21 @@ export function MentoraApp() {
             ? "No ready source chunks found. Wait for processing or upload another readable source."
             : payload.error ?? "Generation failed.",
         );
-        return;
+        return null;
       }
 
       if (!payload.artifact) {
         setError("Generation finished without a Studio output.");
-        return;
+        return null;
       }
 
-      const artifact = payload.artifact;
+      const artifact = normalizeLoadedArtifact(payload.artifact);
       setArtifacts((current) => [artifact, ...current]);
+      return artifact;
     } catch (caught) {
       reportClientError("Study tool generation failed", caught);
       setError("Generation failed. Check your connection and try again.");
+      return null;
     } finally {
       setBusy(null);
     }

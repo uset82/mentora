@@ -19,10 +19,12 @@ import {
   Trash2,
   Video,
   Volume2,
+  X,
 } from "lucide-react";
-import { useState } from "react";
-import type { MouseEvent, ReactNode } from "react";
+import { useEffect, useState } from "react";
+import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 import type { GeneratedArtifact, StudyNote, ToolKind } from "@/lib/types";
+import { parseFlashcards } from "@/lib/study-content";
 import { MarkdownMessage } from "../chat/markdown-message";
 
 type StudyStudioPanelProps = {
@@ -34,7 +36,7 @@ type StudyStudioPanelProps = {
   onCreateNote: (text: string) => Promise<boolean> | boolean;
   onCollapse?: () => void;
   onDeleteNote: (noteId: string) => Promise<boolean> | boolean;
-  onGenerate: (kind: ToolKind) => void;
+  onGenerate: (kind: ToolKind) => Promise<GeneratedArtifact | null>;
   onSendToChat: (artifact: GeneratedArtifact) => void;
   onUpdateNote: (noteId: string, patch: { title?: string; content?: string }) => Promise<boolean> | boolean;
   readySourceCount: number;
@@ -80,6 +82,22 @@ export function StudyStudioPanel({
   t,
 }: StudyStudioPanelProps) {
   const [lastTool, setLastTool] = useState<ToolKind | null>(null);
+  const [activeArtifact, setActiveArtifact] = useState<GeneratedArtifact | null>(null);
+
+  useEffect(() => {
+    if (!activeArtifact) {
+      return;
+    }
+
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        setActiveArtifact(null);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activeArtifact]);
 
   function addNote() {
     const text = window.prompt("Escribe o pega tu nota");
@@ -88,13 +106,23 @@ export function StudyStudioPanel({
     }
   }
 
-  function runTool(kind: ToolKind) {
+  async function runTool(kind: ToolKind) {
     setLastTool(kind);
-    onGenerate(kind);
+    const artifact = await onGenerate(kind);
+    if (artifact) {
+      setActiveArtifact(artifact);
+    }
   }
 
   function preventTileSelection(event: MouseEvent<HTMLElement>) {
     event.preventDefault();
+  }
+
+  function handleOutputCardKeyDown(event: KeyboardEvent<HTMLElement>, artifact: GeneratedArtifact) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setActiveArtifact(artifact);
+    }
   }
 
   return (
@@ -147,7 +175,7 @@ export function StudyStudioPanel({
                 className={`notebook-tool-tile ${tool.tone} group grid min-h-[70px] grid-cols-[22px_minmax(0,1fr)_24px] items-center gap-2 rounded-[12px] p-3 text-left transition ${disabled ? "is-disabled" : ""}`}
                 disabled={disabled}
                 onMouseDown={preventTileSelection}
-                onClick={() => runTool(tool.kind)}
+                onClick={() => void runTool(tool.kind)}
                 type="button"
               >
                 <span aria-hidden="true" className="notebook-tool-icon flex h-6 w-6 shrink-0 items-center justify-center">
@@ -205,7 +233,7 @@ export function StudyStudioPanel({
               <p className="mt-1 text-xs leading-5">{error}</p>
               <button
                 className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold transition"
-                onClick={() => runTool(lastTool)}
+                onClick={() => void runTool(lastTool)}
                 type="button"
               >
                 <RefreshCw size={13} />
@@ -232,8 +260,15 @@ export function StudyStudioPanel({
           ) : (
             <div className="space-y-2">
               {artifacts.slice(0, 4).map((artifact) => (
-                <article key={artifact.id} className="notebook-output-card rounded-[14px] border p-3">
-                  <p className="text-[11px] font-semibold uppercase text-[var(--nb-accent)]">{t[artifact.kind] ?? artifact.kind}</p>
+                <article
+                  key={artifact.id}
+                  className="notebook-output-card is-clickable rounded-[14px] border p-3"
+                  onClick={() => setActiveArtifact(artifact)}
+                  onKeyDown={(event) => handleOutputCardKeyDown(event, artifact)}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <p className="text-[11px] font-semibold uppercase text-[var(--nb-accent)]">{studioArtifactLabel(artifact, t)}</p>
                   <h4 className="mt-1 text-sm font-semibold text-[var(--nb-text)]">{artifact.title}</h4>
                   <div className="mt-2 max-h-40 overflow-hidden text-sm text-[var(--nb-text)]">
                     <MarkdownMessage content={artifact.content} />
@@ -241,7 +276,10 @@ export function StudyStudioPanel({
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     <button
                       className="notebook-message-action inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold transition"
-                      onClick={() => void navigator.clipboard?.writeText(artifact.content)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void navigator.clipboard?.writeText(artifact.content);
+                      }}
                       type="button"
                     >
                       <Clipboard size={13} />
@@ -249,7 +287,10 @@ export function StudyStudioPanel({
                     </button>
                     <button
                       className="notebook-message-action inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold transition"
-                      onClick={() => onSendToChat(artifact)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onSendToChat(artifact);
+                      }}
                       type="button"
                     >
                       <MessageSquareText size={13} />
@@ -300,6 +341,140 @@ export function StudyStudioPanel({
           )}
         </section>
       </div>
+      {activeArtifact && (
+        <StudioArtifactModal
+          artifact={activeArtifact}
+          onClose={() => setActiveArtifact(null)}
+          onCopy={() => void navigator.clipboard?.writeText(activeArtifact.content)}
+          onSendToChat={() => {
+            onSendToChat(activeArtifact);
+            setActiveArtifact(null);
+          }}
+          t={t}
+        />
+      )}
     </aside>
   );
+}
+
+function StudioArtifactModal({
+  artifact,
+  onClose,
+  onCopy,
+  onSendToChat,
+  t,
+}: {
+  artifact: GeneratedArtifact;
+  onClose: () => void;
+  onCopy: () => void;
+  onSendToChat: () => void;
+  t: Record<string, string>;
+}) {
+  return (
+    <div className="notebook-artifact-modal-backdrop" role="presentation">
+      <section
+        aria-labelledby="notebook-artifact-modal-title"
+        aria-modal="true"
+        className="notebook-artifact-modal"
+        role="dialog"
+      >
+        <header className="notebook-artifact-modal-header">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase text-[var(--nb-accent)]">{studioArtifactLabel(artifact, t)}</p>
+            <h2 id="notebook-artifact-modal-title" className="mt-1 truncate text-xl font-semibold text-[var(--nb-text)]">
+              {artifact.title}
+            </h2>
+          </div>
+          <button aria-label="Close Studio output" className="notebook-icon-button h-10 w-10 rounded-full" onClick={onClose} type="button">
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="notebook-artifact-modal-body">
+          <StudioArtifactBody artifact={artifact} t={t} />
+        </div>
+
+        <footer className="notebook-artifact-modal-footer">
+          <button className="notebook-message-action inline-flex h-10 items-center gap-2 rounded-full px-3 text-sm font-semibold transition" onClick={onCopy} type="button">
+            <Clipboard size={15} />
+            Copy
+          </button>
+          <button className="notebook-add-note-button inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm font-semibold transition" onClick={onSendToChat} type="button">
+            <MessageSquareText size={15} />
+            Use in chat
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function StudioArtifactBody({ artifact, t }: { artifact: GeneratedArtifact; t: Record<string, string> }) {
+  if (artifact.kind === "flashcards") {
+    const cards = parseFlashcards(artifact.content);
+    if (cards.length > 0) {
+      return <NotebookFlashcards cards={cards} t={t} />;
+    }
+  }
+
+  return (
+    <div className={`notebook-artifact-rich-body is-${artifact.kind}`}>
+      <MarkdownMessage content={artifact.content} />
+    </div>
+  );
+}
+
+function NotebookFlashcards({
+  cards,
+  t,
+}: {
+  cards: Array<{ front: string; back: string; hint?: string; source?: string }>;
+  t: Record<string, string>;
+}) {
+  const [index, setIndex] = useState(0);
+  const [showBack, setShowBack] = useState(false);
+  const card = cards[index];
+
+  return (
+    <div className="notebook-flashcard-view">
+      <div className="notebook-flashcard-toolbar">
+        <span>{t.flashcards ?? "Flashcards"} {index + 1}/{cards.length}</span>
+        <div className="flex gap-2">
+          <button
+            className="notebook-message-action inline-flex h-9 items-center rounded-full px-3 text-xs font-semibold"
+            disabled={index === 0}
+            onClick={() => {
+              setIndex((current) => Math.max(0, current - 1));
+              setShowBack(false);
+            }}
+            type="button"
+          >
+            {t.previous ?? "Previous"}
+          </button>
+          <button
+            className="notebook-message-action inline-flex h-9 items-center rounded-full px-3 text-xs font-semibold"
+            disabled={index === cards.length - 1}
+            onClick={() => {
+              setIndex((current) => Math.min(cards.length - 1, current + 1));
+              setShowBack(false);
+            }}
+            type="button"
+          >
+            {t.next ?? "Next"}
+          </button>
+        </div>
+      </div>
+
+      <button className="notebook-flashcard-stage" onClick={() => setShowBack((current) => !current)} type="button">
+        <span className="notebook-flashcard-label">{showBack ? t.flashcardBack ?? "Back" : t.flashcardFront ?? "Front"}</span>
+        <strong>{showBack ? card.back : card.front}</strong>
+        <span>{showBack ? card.hint || card.source || "" : card.hint || t.flashcardHint || "Click to reveal the answer."}</span>
+        {card.source && <small>{card.source}</small>}
+      </button>
+    </div>
+  );
+}
+
+function studioArtifactLabel(artifact: GeneratedArtifact, t: Record<string, string>) {
+  return t[artifact.kind] ?? artifact.kind.replace(/_/g, " ");
 }

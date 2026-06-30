@@ -33,8 +33,10 @@ type StudyWorkspaceProps = {
   onAddLink: (url: string) => Promise<boolean> | boolean;
   onCreateSpace: (name: string) => Promise<string | null>;
   onCreateNote: (text: string, selectedDocumentIds?: string[]) => Promise<boolean> | boolean;
+  onCreateSourceNote: (text: string) => Promise<boolean> | boolean;
+  onDeleteDocument: (documentId: string) => Promise<boolean> | boolean;
   onDeleteNote: (noteId: string) => Promise<boolean> | boolean;
-  onGenerate: (kind: ToolKind, selectedDocumentIds?: string[]) => void;
+  onGenerate: (kind: ToolKind, selectedDocumentIds?: string[]) => Promise<GeneratedArtifact | null>;
   onOpenProfile: () => void;
   onOpenProgress: () => void;
   onSelectSpace: (spaceId: string) => void;
@@ -60,6 +62,8 @@ export function StudyWorkspace({
   onAddLink,
   onCreateSpace,
   onCreateNote,
+  onCreateSourceNote,
+  onDeleteDocument,
   onDeleteNote,
   onGenerate,
   onOpenProfile,
@@ -181,6 +185,14 @@ export function StudyWorkspace({
     );
   }
 
+  async function deleteDocument(documentId: string) {
+    const deleted = await onDeleteDocument(documentId);
+    if (deleted) {
+      setSelectedMaterialIds((current) => current.filter((id) => id !== documentId));
+    }
+    return deleted;
+  }
+
   function sendArtifactToChat(artifact: GeneratedArtifact) {
     onSend(`Sigamos estudiando con este recurso:\n\n${artifact.content}`, selectedMaterialIds);
     setMobilePanel("chat");
@@ -250,7 +262,8 @@ export function StudyWorkspace({
                   busy={busy}
                   documents={activeDocuments}
                   onAddLink={onAddLink}
-                  onCreateNote={(text) => onCreateNote(text, selectedMaterialIds)}
+                  onCreateNote={onCreateSourceNote}
+                  onDeleteDocument={deleteDocument}
                   onToggleMaterial={toggleMaterial}
                   onUpload={onUpload}
                   selectedMaterialIds={selectedMaterialIds}
@@ -262,7 +275,8 @@ export function StudyWorkspace({
               busy={busy}
               documents={activeDocuments}
               onAddLink={onAddLink}
-              onCreateNote={(text) => onCreateNote(text, selectedMaterialIds)}
+              onCreateNote={onCreateSourceNote}
+              onDeleteDocument={deleteDocument}
               onToggleMaterial={toggleMaterial}
               onUpload={onUpload}
               selectedMaterialIds={selectedMaterialIds}
@@ -295,6 +309,7 @@ export function StudyWorkspace({
             messages={messages}
             onAddLink={onAddLink}
             onCreateNote={(text) => onCreateNote(text, selectedMaterialIds)}
+            onCreateSourceNote={onCreateSourceNote}
             onFocusChat={() => {
               setLeftCollapsed(true);
               setRightCollapsed(true);
